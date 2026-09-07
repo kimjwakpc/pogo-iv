@@ -44,6 +44,16 @@ h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
 }
 .dbar button:disabled{opacity:.5;cursor:default}
 .tabs{display:flex;gap:2px;margin-top:9px}
+/* 레이드 */
+.rrow{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:7px 0;border-top:1px solid var(--line);font-size:13px;
+}
+.rrow:first-of-type{border-top:0}
+.rtype{font-size:11.5px;padding:1px 7px;border-radius:5px;font-weight:600;flex:none}
+.rrank{font-size:15px;min-width:46px;flex:none}
+.rname{flex:1;min-width:110px}
+.rmv{color:var(--mut);font-size:12.5px;flex:1;min-width:150px}
 .tab{
   flex:1;padding:7px 4px;font-size:13px;text-align:center;cursor:pointer;
   background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);
@@ -203,7 +213,8 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-t="one">한 마리</button>
       <button class="tab" role="tab" aria-selected="false" data-t="bulk">여러 마리</button>
-      <button class="tab" role="tab" aria-selected="false" data-t="box">내 보관함</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="raid">레이드</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="box">보관함</button>
       <button class="tab" role="tab" aria-selected="false" data-t="set">설정</button>
     </div>
   </div>
@@ -216,8 +227,8 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 <!-- ONE -->
 <section id="p-one">
   <label class="field">
-    <span class="lab">도감번호 또는 이름</span>
-    <input class="tin" id="q" placeholder="823 · 아머까오 · 파라꼬" autocomplete="off" enterkeyhint="search">
+    <span class="lab">도감번호 · 이름 · 초성 · 별명</span>
+    <input class="tin" id="q" placeholder="823 · 아머까오 · 파라꼬 · ㅇㅁㄲㅇ" autocomplete="off" enterkeyhint="search">
   </label>
   <div class="forms hide" id="forms"></div>
   <div class="ivrow">
@@ -246,6 +257,26 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 </section>
 
 <!-- BOX -->
+<!-- RAID -->
+<section id="p-raid" class="hide">
+  <div class="note" style="margin-top:18px">
+    레이드는 개체값 100짜리를 쓰는 게 정답이라 개체 판독이 의미가 없습니다.
+    그래서 여기서는 <b style="color:var(--fg)">타입별 순위 · 기술배치 · 대기머 필요 여부</b>만 봅니다.
+    진화 계통과 메가, 그림자를 모두 계산합니다.
+  </div>
+  <label class="field">
+    <span class="lab">도감번호 · 이름 · 초성 · 별명</span>
+    <input class="tin" id="rq" placeholder="램펄드 · ㄹㅍㄷ · 823" autocomplete="off" enterkeyhint="search">
+  </label>
+  <button class="btn" id="rgo">레이드 평가</button>
+  <div id="rerr" class="err hide"></div>
+  <div id="rout"></div>
+
+  <div class="note" style="margin-top:26px">타입을 고르면 그 타입 공격수 순위를 봅니다. 라인업의 빈자리를 찾을 때 씁니다.</div>
+  <div id="rtypes" class="forms"></div>
+  <div id="rtout"></div>
+</section>
+
 <section id="p-box" class="hide">
   <div id="boxout"></div>
   <div class="btnrow">
@@ -281,6 +312,18 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     <button class="btn ghost" id="ovimp">불러오기</button>
   </div>
   <input type="file" id="ovfile" accept=".json" class="hide">
+
+  <div class="note" style="margin-top:26px">
+    자주 쓰는 축약어를 별명으로 등록하면 검색창에서 그대로 찾습니다.
+    판정 화면에서 이름 옆 &ldquo;별명&rdquo; 을 누르면 등록됩니다.
+    별명 없이도 <b style="color:var(--fg)">초성</b>으로 찾을 수 있습니다 &mdash; ㄱㄹㄷㅅ &rarr; 갸라도스.
+  </div>
+  <div id="alout"></div>
+  <div class="btnrow">
+    <button class="btn ghost" id="alexp">별명 내보내기</button>
+    <button class="btn ghost" id="alimp">불러오기</button>
+  </div>
+  <input type="file" id="alfile" accept=".json" class="hide">
 </section>
 
 </main>
@@ -405,7 +448,9 @@ function rankAll(b,cap){
 
 /* ---------- state ---------- */
 let GM=null, R15=null, R25=null, IDX=null;
+let PVE=null, RANK=null;                      // 레이드용 PvE 수치와 타입별 순위
 let OV = JSON.parse(localStorage.getItem('ivx_names')||'{}');
+let ALIAS = JSON.parse(localStorage.getItem('ivx_alias')||'{}');   // 별명 → speciesId
 let BOX = JSON.parse(localStorage.getItem('ivx_box')||'[]');
 let CFG = Object.assign({thr:99,metaN:200}, JSON.parse(localStorage.getItem('ivx_cfg')||'{}'));
 let curForms=[], curPick=0;
@@ -445,17 +490,21 @@ const RAW='https://raw.githubusercontent.com/pvpoke/pvpoke/master/src/data/';
 async function load(force){
   try{
     const opt = force ? {cache:'reload'} : undefined;
-    const [g,a,b]=await Promise.all([
+    const [g,a,b,v]=await Promise.all([
       fetch(RAW+'gamemaster.json',opt).then(r=>r.json()),
       fetch(RAW+'rankings/all/overall/rankings-1500.json',opt).then(r=>r.json()),
-      fetch(RAW+'rankings/all/overall/rankings-2500.json',opt).then(r=>r.json())
+      fetch(RAW+'rankings/all/overall/rankings-2500.json',opt).then(r=>r.json()),
+      // 레이드용 PvE 수치. 같은 저장소에 있고 GitHub Actions 가 매일 갱신합니다.
+      fetch('pve.json',opt).then(r=>r.json()).catch(()=>null)
     ]);
+    PVE=v;
     GM=g; R15=new Map(); R25=new Map();
     a.forEach((e,i)=>R15.set(e.speciesId,{r:i+1,mv:e.moveset,sc:e.score}));
     b.forEach((e,i)=>R25.set(e.speciesId,{r:i+1,mv:e.moveset,sc:e.score}));
     IDX=new Map(); GM.pokemon.forEach(p=>IDX.set(p.speciesId,p));
     showStamp();
-    renderBox(); renderOv();
+    if(PVE) buildRanks();
+    renderBox(); renderOv(); renderAl(); renderRaidTypes();
   }catch(e){
     $('#stat').textContent='데이터를 불러오지 못했습니다';
     $('#err').className='err'; $('#err').textContent='pvpoke 데이터에 접근할 수 없습니다. 인터넷 연결을 확인하고 새로고침해 주세요.';
@@ -495,22 +544,54 @@ $('#dbar').addEventListener('click',e=>{
 });
 
 /* ---------- search ---------- */
+/* 초성 검색: "ㄱㄹㄷㅅ" 으로 갸라도스를 찾습니다. */
+const CHO='\u3131\u3132\u3134\u3137\u3138\u3139\u3141\u3142\u3143\u3145\u3146\u3147\u3148\u3149\u314A\u314B\u314C\u314D\u314E';
+function chosung(s){
+  let o='';
+  for(const c of s){
+    const i=c.charCodeAt(0)-0xAC00;
+    o += (i>=0 && i<11172) ? CHO[Math.floor(i/588)] : c;
+  }
+  return o;
+}
+const isCho=q=>/^[\u3131-\u314E]+$/.test(q);
+
+/* speciesId → 그 포켓몬에 붙은 별명들 */
+function aliasesOf(sid){ return Object.keys(ALIAS).filter(k=>ALIAS[k]===sid); }
+
 function search(q){
   if(!GM) return [];
   q=q.trim(); if(!q) return [];
+
+  // 별명이 정확히 일치하면 그것만 내놓는다
+  if(ALIAS[q]){ const p=IDX.get(ALIAS[q]); if(p) return [p]; }
+
   const num=parseInt(q,10);
   let hits=[];
   if(!isNaN(num) && String(num)===q.replace(/^0+/,'')){
     hits=GM.pokemon.filter(p=>p.dex===num);
+  }else if(isCho(q)){
+    hits=GM.pokemon.filter(p=>chosung(nameKo(p)).includes(q)||chosung(KO_NAME[p.dex]||'').includes(q));
   }else{
     const lq=q.toLowerCase();
+    const alHit=new Set(Object.keys(ALIAS).filter(k=>k.includes(q)).map(k=>ALIAS[k]));
     hits=GM.pokemon.filter(p=>{
       const kn=nameKo(p);
       const fam=KO_NAME[p.dex]||'';
-      return kn.includes(q)||fam.includes(q)||p.speciesName.toLowerCase().includes(lq)||p.speciesId.includes(lq);
+      return kn.includes(q)||fam.includes(q)||p.speciesName.toLowerCase().includes(lq)
+          ||p.speciesId.includes(lq)||alHit.has(p.speciesId);
     });
   }
+  // 딱 맞는 것 → 앞부분이 맞는 것 → 나머지. 같은 등급이면 기본형 → 메가 → 그림자.
+  const starts=t=>{
+    let kn=nameKo(t), fam=KO_NAME[t.dex]||'';
+    if(isCho(q)){ kn=chosung(kn); fam=chosung(fam); }
+    if(kn===q||fam===q) return 0;
+    if(kn.startsWith(q)||fam.startsWith(q)) return 1;
+    return 2;
+  };
   hits.sort((x,y)=>{
+    const d=starts(x)-starts(y); if(d) return d;
     const s=t=>(t.speciesId.includes('_shadow')?2:0)+(/mega/.test(t.speciesId)?1:0);
     return s(x)-s(y);
   });
@@ -610,7 +691,10 @@ function renderOne(o){
   let H='<div class="hdr" style="--tc:'+tc+'">';
   H+='<div class="nm"><b>'+esc(nameKo(p))+'</b><span class="dex">#'+p.dex+'</span>'+
      '<span class="dex">'+o.a+'/'+o.d+'/'+o.h+'</span>'+
-     '<button class="edit" data-edit="'+esc(p.speciesId)+'">이름 고치기</button></div></div>';
+     '<button class="edit" data-edit="'+esc(p.speciesId)+'">이름 고치기</button>'+
+     '<button class="edit" data-alias="'+esc(p.speciesId)+'">별명</button></div></div>';
+  const als=aliasesOf(p.speciesId);
+  if(als.length) H+='<div class="note">별명: '+als.map(esc).join(' · ')+'</div>';
 
   H+='<div class="verdict v-'+o.verdict[0]+'"><b>'+
      ({keep:'유지',cull:'정리',hold:'보류'}[o.verdict[0]])+'</b><span>'+esc(o.verdict[1])+'</span></div>';
@@ -691,6 +775,39 @@ $('#res').addEventListener('click',e=>{
   localStorage.setItem('ivx_names',JSON.stringify(OV)); renderOv(); runOne();
 });
 
+/* ---------- 별명 ---------- */
+function saveAlias(){ localStorage.setItem('ivx_alias',JSON.stringify(ALIAS)); renderAl(); }
+$('#res').addEventListener('click',e=>{
+  const b=e.target.closest('[data-alias]'); if(!b) return;
+  const sid=b.dataset.alias, p=IDX.get(sid);
+  const cur=aliasesOf(sid).join(', ');
+  const v=prompt('"'+nameKo(p)+'" 을(를) 부를 별명. 쉼표로 여러 개, 비우면 모두 지웁니다.', cur);
+  if(v===null) return;
+  aliasesOf(sid).forEach(k=>delete ALIAS[k]);            // 이 포켓몬의 기존 별명은 지우고
+  v.split(',').map(x=>x.trim()).filter(Boolean).forEach(k=>{ ALIAS[k]=sid; });
+  saveAlias(); runOne();
+});
+function renderAl(){
+  const ks=Object.keys(ALIAS).sort();
+  $('#alout').innerHTML = ks.length
+    ? '<table><thead><tr><th>별명</th><th>가리키는 포켓몬</th><th></th></tr></thead><tbody>'+
+      ks.map(k=>{ const p=IDX&&IDX.get(ALIAS[k]);
+        return '<tr><td>'+esc(k)+'</td><td>'+esc(p?nameKo(p):ALIAS[k])+'</td>'+
+               '<td><button class="rowbtn" data-al="'+esc(k)+'">\u00d7</button></td></tr>'; }).join('')+
+      '</tbody></table>'
+    : '<div class="empty">등록한 별명이 없습니다. 판정 화면에서 이름 옆 \u201c별명\u201d 을 누르면 여기에 쌓입니다.</div>';
+}
+$('#alout').addEventListener('click',e=>{
+  const b=e.target.closest('[data-al]'); if(!b) return;
+  delete ALIAS[b.dataset.al]; saveAlias();
+});
+$('#alexp').onclick=()=>dl('별명.json',ALIAS);
+$('#alimp').onclick=()=>$('#alfile').click();
+$('#alfile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  f.text().then(t=>{ try{ Object.assign(ALIAS,JSON.parse(t)); saveAlias(); alert('불러왔습니다.'); }catch(_){ alert('파일을 읽지 못했습니다.'); } });
+};
+
 /* ---------- bulk ---------- */
 function parseLine(s){
   s=s.trim(); if(!s) return null;
@@ -719,6 +836,145 @@ $('#badd').onclick=()=>{
   bulkRows.forEach(o=>BOX.push({id:o.p.speciesId,a:o.a,d:o.d,h:o.h,cp:o.cp,legacy:false}));
   saveBox(); alert(bulkRows.length+'마리를 담았습니다.');
 };
+
+
+/* ---------- 레이드 ----------
+   레이드는 개체값이 사실상 100 고정이라 개체 판독이 의미 없습니다.
+   그래서 여기서는 개체값을 받지 않고 "그 포켓몬이 타입별 공격수로 몇 위인가",
+   "어떤 기술을 써야 하는가", "대기머가 필요한가"만 봅니다.
+
+   순위 기준은 사이클 DPS 입니다.
+     일반기를 n번 써서 차지기 에너지를 채우고 차지기를 한 번 쓰는 한 주기를 잡고,
+     그 주기의 총 피해 ÷ 총 시간.
+   방어측은 모두에게 같은 값을 쓰므로 순위에는 영향이 없습니다.
+   회피·상대 타입·버티는 시간(TDO)은 넣지 않은 단순한 모형이라,
+   화면에는 DPS 숫자를 내지 않고 순위와 기술배치만 보여 줍니다. */
+const RAID_LV=40, RAID_DEF=200;
+
+function raidDmg(power,atk,stab,eff){
+  return Math.floor(0.5*power*atk/RAID_DEF*(stab?PVE.K.stab:1)*eff)+1;
+}
+/* 이 포켓몬이 낼 수 있는 차지기 타입별 최고 조합.
+
+   타입 T 의 순위는 "T 에 약한 보스를 때린다"는 전제로 계산합니다.
+   그래야 T 기술을 쓰는 일반기가 제값을 합니다. 이걸 안 넣으면
+   뮤츠가 염동력+냉동빔으로 얼음 1위가 되는 식의 엉뚱한 순위가 나옵니다.
+
+   점수는 DPS 만 쓰지 않고 DPS³ × TDO 를 씁니다 (레이드 순위표에서 쓰는 방식).
+   TDO 는 얼마나 오래 버티며 딜을 넣는지로, 방어·체력이 함께 반영됩니다.
+   상수는 모두에게 같으므로 순위에는 영향이 없어 생략했습니다. */
+const SE=1.6;                                  // 약점을 찌를 때의 배수
+function setsByType(p,shadow){
+  const C40=cpm(RAID_LV);
+  const atk=(p.baseStats.atk+15)*C40*(shadow?PVE.K.shadowAtk:1);
+  const def=(p.baseStats.def+15)*C40*(shadow?PVE.K.shadowDef:1);
+  const hp =Math.floor((p.baseStats.hp+15)*C40);
+  const bulk=hp*def;                           // TDO ∝ DPS × 체력 × 방어
+  const el=new Set(p.eliteMoves||[]);
+  const out={};
+  for(const fid of (p.fastMoves||[])){
+    const F=PVE.moves[fid]; if(!F||!F.f||F.e<=0) continue;
+    for(const cid of (p.chargedMoves||[])){
+      const C=PVE.moves[cid]; if(!C||C.f||C.e>=0) continue;
+      const T=C.t;
+      const fdm=raidDmg(F.p,atk,p.types.includes(F.t),F.t===T?SE:1);
+      const cdm=raidDmg(C.p,atk,p.types.includes(T),SE);
+      const n=Math.ceil(-C.e/F.e);
+      const dps=(n*fdm+cdm)/((n*F.d+C.d)/1000);
+      const score=Math.pow(dps,4)*bulk;         // DPS³ × TDO = DPS⁴ × 체력 × 방어
+      const cur=out[T];
+      if(!cur||score>cur.score) out[T]={score,dps,f:fid,c:cid,elite:el.has(fid)||el.has(cid)};
+    }
+  }
+  return out;
+}
+/* 그림자는 메가진화를 못 합니다. 원시회귀도 마찬가지입니다. */
+function canShadow(p){
+  if(/_mega(_[xy])?$|_primal$/.test(p.speciesId)) return false;
+  return (p.tags||[]).includes('shadoweligible') || IDX.has(p.speciesId+'_shadow');
+}
+/* 타입별 공격수 순위표를 한 번 만들어 둔다 */
+function buildRanks(){
+  RANK={}; PVE.types.forEach(t=>RANK[t]=[]);
+  for(const p of GM.pokemon){
+    if(p.released===false) continue;
+    if(/_shadow$/.test(p.speciesId)) continue;        // 그림자는 아래에서 따로 얹는다
+    for(const sh of (canShadow(p)?[false,true]:[false])){
+      const sets=setsByType(p,sh);
+      for(const t in sets) RANK[t].push(Object.assign({p,sh},sets[t]));
+    }
+  }
+  for(const t in RANK) RANK[t].sort((a,b)=>b.score-a.score);
+}
+/* 특정 포켓몬이 각 타입에서 몇 위인지 */
+function raidRanksOf(p,shadow){
+  const out=[];
+  for(const t in RANK){
+    const i=RANK[t].findIndex(e=>e.p.speciesId===p.speciesId&&e.sh===shadow);
+    if(i>=0) out.push(Object.assign({type:t,rank:i+1,total:RANK[t].length},RANK[t][i]));
+  }
+  return out.sort((a,b)=>a.rank-b.rank);
+}
+const raidName=(p,sh)=>(sh?'그림자 ':'')+nameKo(p);
+
+function raidRow(e,showName){
+  const tc=TYPE_C[e.type]||'#6C8CD5';
+  return '<div class="rrow" style="--tc:'+tc+'">'+
+    '<span class="rtype" style="background:'+tc+'22;color:'+tc+'">'+esc(TYPE_KO[e.type]||e.type)+'</span>'+
+    '<b class="rrank">'+e.rank+'위</b>'+
+    (showName?'<span class="rname">'+esc(raidName(e.p,e.sh))+'</span>':'')+
+    '<span class="rmv">'+esc(moveKo(e.f))+' / '+esc(moveKo(e.c))+(e.elite?' <span class="el">대기머*</span>':'')+'</span>'+
+    '</div>';
+}
+
+/* 검색한 포켓몬의 레이드 평가 — 진화 계통 · 메가 · 그림자를 모두 본다 */
+const RAID_CUT=100;                       // 이 순위 밖은 굳이 보여주지 않는다
+function renderRaidMon(p){
+  const forms=[];
+  chainOf(p).forEach(sp=>forms.push([sp,false]));
+  megaOf(p).forEach(sp=>forms.push([sp,false]));
+  chainOf(p).forEach(sp=>{ if(canShadow(sp)) forms.push([sp,true]); });
+
+  let H='', any=false;
+  for(const [sp,sh] of forms){
+    const rs=raidRanksOf(sp,sh).filter(e=>e.rank<=RAID_CUT);
+    if(!rs.length) continue;
+    any=true;
+    const tc=TYPE_C[sp.types[0]]||'#6C8CD5';
+    H+='<div class="stage" style="--tc:'+tc+'"><div class="sthead"><b>'+esc(raidName(sp,sh))+'</b></div>'+
+       rs.map(e=>raidRow(e,false)).join('')+'</div>';
+  }
+  if(!any) H='<div class="empty">'+esc(nameKo(p))+' 는 어느 타입에서도 '+RAID_CUT+'위 안에 들지 않습니다. 레이드용으로는 쓰지 않는 편이 낫습니다.</div>';
+  return H;
+}
+
+function renderRaidTypes(){
+  if(!PVE||!RANK) return;
+  $('#rtypes').innerHTML = PVE.types.map(t=>
+    '<button class="fchip" data-rt="'+t+'" style="border-color:'+(TYPE_C[t]||'#6C8CD5')+'55">'+esc(TYPE_KO[t]||t)+'</button>').join('');
+}
+let rtOpen=null;
+$('#rtypes').addEventListener('click',e=>{
+  const b=e.target.closest('[data-rt]'); if(!b||!RANK) return;
+  const t=b.dataset.rt;
+  rtOpen = (rtOpen===t)?null:t;
+  [...$('#rtypes').children].forEach(c=>c.setAttribute('aria-pressed',c.dataset.rt===rtOpen));
+  $('#rtout').innerHTML = rtOpen
+    ? '<div class="note">'+esc(TYPE_KO[rtOpen])+' 공격수 상위 30 — 대기머*가 붙은 자리는 그 기술을 배워야 나오는 순위입니다.</div>'+
+      RANK[rtOpen].slice(0,30).map((e,i)=>raidRow(Object.assign({},e,{type:rtOpen,rank:i+1}),true)).join('')
+    : '';
+});
+
+function runRaid(){
+  const err=$('#rerr'); err.className='err hide';
+  if(!GM){ err.className='err'; err.textContent='데이터를 아직 불러오는 중입니다.'; return; }
+  if(!PVE){ err.className='err'; err.textContent='레이드 자료(pve.json)를 불러오지 못했습니다. 새로고침해 주세요.'; return; }
+  const hits=search($('#rq').value);
+  if(!hits.length){ err.className='err'; err.textContent='그런 포켓몬을 찾지 못했습니다.'; $('#rout').innerHTML=''; return; }
+  $('#rout').innerHTML=renderRaidMon(hits[0]);
+}
+$('#rgo').onclick=runRaid;
+$('#rq').addEventListener('keydown',e=>{ if(e.key==='Enter') runRaid(); });
 
 /* ---------- box ---------- */
 function saveBox(){ localStorage.setItem('ivx_box',JSON.stringify(BOX)); renderBox(); }
@@ -774,7 +1030,7 @@ $('#ovfile').onchange=e=>{
 /* ---------- tabs ---------- */
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));
-  ['one','bulk','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
+  ['one','bulk','raid','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
   if(t.dataset.t==='box') renderBox();
 });
 

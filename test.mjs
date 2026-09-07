@@ -30,6 +30,8 @@ const SOURCES = {
   'rankings-1500.json': RAW + 'rankings/all/overall/rankings-1500.json',
   'rankings-2500.json': RAW + 'rankings/all/overall/rankings-2500.json',
 };
+// pve.json 은 저장소에 같이 있는 파일이라 내려받지 않고 그대로 읽습니다.
+const PVE_FILE = path.resolve(HERE, 'pve.json');
 
 /* ---------- 데이터 준비 ---------- */
 async function getData() {
@@ -104,10 +106,12 @@ async function boot() {
   catch (e) { throw new Error('JS 문법 오류: ' + e.message); }
 
   const data = await getData();
+  if (!fs.existsSync(PVE_FILE)) throw new Error('pve.json 이 없습니다. node tools/build-pve.mjs 를 먼저 돌리세요.');
   const byUrl = {
     [SOURCES['gamemaster.json']]: data['gamemaster.json'],
     [SOURCES['rankings-1500.json']]: data['rankings-1500.json'],
     [SOURCES['rankings-2500.json']]: data['rankings-2500.json'],
+    'pve.json': JSON.parse(fs.readFileSync(PVE_FILE, 'utf8')),
   };
 
   const ctx = {
@@ -137,13 +141,16 @@ async function boot() {
   levelFromCP, maxLevel, calcCP, cpm, chainOf, megaOf,
   showStamp, parseTS, fmtDay, PATCHES,
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
+  chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
+  setsByType, raidRanksOf, canShadow, raidDmg, buildRanks,
+  get PVE(){return PVE}, get RANK(){return RANK},
   get GM(){return GM}, get IDX(){return IDX}, get R15(){return R15}, get R25(){return R25},
   get CFG(){return CFG}
 };`;
   new vm.Script(src + epilogue, { filename: 'index.html<script>' }).runInContext(ctx);
 
   // load() 가 끝날 때까지 대기
-  for (let i = 0; i < 200 && !ctx.__T.GM; i++) await new Promise(r => setTimeout(r, 20));
+  for (let i = 0; i < 200 && !(ctx.__T.GM && ctx.__T.RANK); i++) await new Promise(r => setTimeout(r, 20));
   if (!ctx.__T.GM) throw new Error('데이터 적재(load)가 끝나지 않았습니다.');
   ctx.__T.$ = s => ctx.document.querySelector(s);
   return ctx.__T;
@@ -283,6 +290,120 @@ async function main() {
   for (const [sid, want] of nameSpot) {
     const p = T.IDX.get(sid);
     check(`이름 ${sid}`, p ? T.nameKo(p) : '(gamemaster에 없음)', want);
+  }
+
+  // 초성 검색
+  check('초성 변환 갸라도스', T.chosung('갸라도스'), 'ㄱㄹㄷㅅ');
+  check('초성 변환 타입:널', T.chosung('타입:널'), 'ㅌㅇ:ㄴ');
+  const choCases = [
+    ['ㄱㄹㄷㅅ', 'gyarados'],
+    ['ㅇㅁㄲㅇ', 'corviknight'],
+    ['ㅍㅋㅊ', 'pikachu'],
+    ['ㄸㄹㅋ', 'mimikyu'],
+    ['ㅈㄹ', 'ampharos'],   // 초성이 딱 2글자로 맞는 전룡이 쥬레곤(ㅈㄹㄱ)보다 먼저
+  ];
+  for (const [q, sid] of choCases) {
+    const hits = T.search(q);
+    check(`초성 검색 ${q}`, hits.length ? hits[0].speciesId : '(없음)', sid);
+  }
+  check('초성 아닌 말은 초성 검색 안 함', T.isCho('갸라도스'), false);
+
+  // 별명
+  {
+    T.ALIAS['까오'] = 'corviknight';
+    T.ALIAS['갸도'] = 'gyarados';
+    check('별명 정확 일치', T.search('까오')[0].speciesId, 'corviknight');
+    check('별명은 하나만 내놓음', T.search('까오').length, 1);
+    check('별명 부분 일치', T.search('갸')[0] ? T.search('갸').some(p => p.speciesId === 'gyarados') : false, true);
+    check('speciesId → 별명 되찾기', T.aliasesOf('corviknight').join(','), '까오');
+    delete T.ALIAS['까오']; delete T.ALIAS['갸도'];
+    // 별명을 지우면 보통 이름 검색으로 돌아간다 (아머까오 · 그림자 아머까오)
+    check('별명 지운 뒤 이름 검색으로 복귀', T.search('까오').every(p => p.dex === 823), true);
+  }
+
+  // 기존 검색이 그대로 되는지
+  check('이름 검색', T.search('아머까오')[0].speciesId, 'corviknight');
+  check('도감번호 검색', T.search('823')[0].speciesId, 'corviknight');
+  check('영문 검색', T.search('corviknight')[0].speciesId, 'corviknight');
+  check('진화 전 이름 검색', T.search('파라꼬').length > 0, true);
+
+  // ---------- 레이드 ----------
+  check('pve.json 적재', !!T.PVE, true);
+  check('PvE 카운터 수치', JSON.stringify(T.PVE.moves.COUNTER), '{"t":"fighting","p":13,"d":1000,"e":9,"f":1}');
+  check('상성 물→불꽃', T.PVE.chart.water.fire, 1.6);
+  check('상성 물→풀', T.PVE.chart.water.grass, 0.625);
+  check('상성 노말→고스트', T.PVE.chart.normal.ghost, 0.390625);
+  check('자속 배수', T.PVE.K.stab, 1.2);
+
+  // 사이클 DPS 를 손으로 계산한 값과 대조한다
+  //   괴력몬(공 234) 카운터 + 폭발펀치, 격투에 약한 보스 상대
+  //   공격 = (234+15) × CPM(40) = 196.7847
+  //   일반기 = floor(0.5×13×196.7847/200×1.2×1.6)+1 = 13
+  //   차지기 = floor(0.5×85×196.7847/200×1.2×1.6)+1 = 81
+  //   일반기 6번(50에너지 ÷ 9) → (6×13+81) ÷ ((6×1000+2500)/1000) = 18.7059
+  {
+    const machamp = T.IDX.get('machamp');
+    const atk = (machamp.baseStats.atk + 15) * 0.790300011634826;
+    const F = T.PVE.moves.COUNTER, C = T.PVE.moves.DYNAMIC_PUNCH;
+    const fd = T.raidDmg(F.p, atk, true, 1.6), cd = T.raidDmg(C.p, atk, true, 1.6);
+    const n = Math.ceil(-C.e / F.e);
+    const dps = (n * fd + cd) / ((n * F.d + C.d) / 1000);
+    check('손계산 일반기 피해', fd, 13);
+    check('손계산 차지기 피해', cd, 81);
+    check('손계산 사이클 수', n, 6);
+    check('손계산 DPS', dps.toFixed(4), '18.7059');
+
+    const fight = T.setsByType(machamp, false).fighting;
+    check('괴력몬 격투 최적 조합 존재', !!fight, true);
+    check('엔진이 이보다 나쁜 조합을 고르지 않음', fight.dps >= dps - 1e-9, true);
+  }
+
+  // 그림자는 메가진화를 못 한다
+  {
+    const megas = Object.values(T.RANK).flat().filter(e => e.sh && /_mega|_primal/.test(e.p.speciesId));
+    check('그림자 메가가 순위에 없음', megas.length, 0);
+    check('메가 리자몽Y 는 그림자 불가', T.canShadow(T.IDX.get('charizard_mega_y')), false);
+    check('마기라스는 그림자 가능', T.canShadow(T.IDX.get('tyranitar')), true);
+  }
+
+  // 약점을 찌른다는 전제가 실제로 반영되는지 — 자속 일반기가 비자속보다 유리해야 한다
+  {
+    const mewtwo = T.IDX.get('mewtwo');
+    const ice = T.setsByType(mewtwo, false).ice;
+    const psy = T.setsByType(mewtwo, false).psychic;
+    check('뮤츠는 얼음보다 에스퍼에서 강함', psy.score > ice.score, true);
+  }
+
+  // 그림자는 같은 개체의 일반형보다 반드시 세다
+  {
+    const p = T.IDX.get('tyranitar');
+    const a = T.setsByType(p, false), b = T.setsByType(p, true);
+    const t = Object.keys(a)[0];
+    check('그림자 > 일반형', b[t].dps > a[t].dps, true);
+  }
+
+  // 순위표 위생
+  {
+    const rock = T.RANK.rock;
+    check('바위 순위표가 비어 있지 않음', rock.length > 50, true);
+    check('순위표가 내림차순', rock.every((e, i) => i === 0 || rock[i - 1].score >= e.score), true);
+    const unreleased = rock.filter(e => e.p.released === false);
+    check('미출시 포켓몬 없음', unreleased.length, 0);
+    const dupShadow = rock.filter(e => /_shadow$/.test(e.p.speciesId));
+    check('_shadow 종을 따로 넣지 않음', dupShadow.length, 0);
+    // 대기머 표시가 실제 eliteMoves 와 맞는지
+    const wrong = rock.slice(0, 60).filter(e => {
+      const el = new Set(e.p.eliteMoves || []);
+      return e.elite !== (el.has(e.f) || el.has(e.c));
+    });
+    check('대기머 표시 정확', wrong.length, 0);
+  }
+
+  // 특정 포켓몬의 타입별 순위 조회
+  {
+    const rs = T.raidRanksOf(T.IDX.get('rampardos'), false);
+    check('램펄드 순위 조회됨', rs.length > 0, true);
+    check('램펄드 최고 타입이 바위', rs[0].type, 'rock');
   }
 
   // 출력

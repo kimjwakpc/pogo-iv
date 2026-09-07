@@ -1,0 +1,35 @@
+name: pve.json 갱신
+
+# PokeMiners GAME_MASTER 에서 레이드용 기술 수치를 다시 뽑습니다.
+# 밸런스 패치가 오면 다음 날 새벽에 저절로 반영됩니다.
+on:
+  schedule:
+    - cron: '20 19 * * *'      # UTC 19:20 = 한국시간 매일 04:20
+  workflow_dispatch:            # 저장소 Actions 탭에서 손으로 돌릴 수도 있습니다
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: pve.json 다시 만들기
+        run: node tools/build-pve.mjs
+
+      - name: 바뀐 게 있으면 커밋
+        run: |
+          if git diff --quiet -- pve.json; then
+            echo "바뀐 내용 없음 — 커밋하지 않습니다."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pve.json
+          git commit -m "pve.json 자동 갱신 (PokeMiners)"
+          git push
