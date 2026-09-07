@@ -43,6 +43,26 @@ for (const t of raw) {
   };
 }
 
+/* 메가 전용 3번째 기술 (메가레벨 4 에서 5000 메가에너지로 해금).
+   VM_MOVE_TEMP_EVOLUTION_MEGA[_X|_Y]_V####_POKEMON_XXX 템플릿에 들어 있고,
+   같은 이름의 일반 기술과는 위력·에너지가 다른 별개의 기술입니다.
+   pvpoke 에는 없어서 여기서 챙기지 않으면 이 13마리가 과소평가됩니다.
+   키는 "도감번호_폼접미사" 로, 앱의 speciesId(dragonite_mega, raichu_mega_x)와 맞춥니다. */
+const VFX_FIX = { MYST_FIRE:'MYSTICAL_FIRE' };
+const megaMoves = {};
+for (const t of raw) {
+  const m = t.data.moveSettings;
+  if (!m || !/^VM_MOVE_TEMP_EVOLUTION_/.test(t.templateId)) continue;
+  const dex = +(t.templateId.match(/V(\d{4})_POKEMON/) || [])[1];
+  const evo = (t.templateId.match(/TEMP_EVOLUTION_([A-Z_]+?)_V\d{4}/) || [])[1];
+  if (!dex || !evo) continue;
+  const vfx = String(m.vfxName || '').toUpperCase();
+  const base = VFX_FIX[vfx] || vfx;
+  if (!moves[base]) throw new Error(`메가 전용기의 원본 기술을 못 찾음: ${t.templateId} (vfx ${vfx})`);
+  megaMoves[dex + '_' + evo.toLowerCase()] =
+    { t: T(m.pokemonType), p: m.power || 0, d: m.durationMs, e: m.energyDelta || 0, f: 0, base };
+}
+
 /* 타입 상성: chart[공격타입][방어타입]
    주의 — GAME_MASTER 의 POKEMON_TYPE_* 템플릿은 알파벳 순으로 나오지만
    attackScalar 배열의 인덱스는 아래 고정 순서를 따릅니다. 헷갈리면 상성표가
@@ -86,7 +106,7 @@ const cpm = raw.find(t => t.data.playerLevel).data.playerLevel.cpMultiplier;
 /* 내용이 그대로면 파일도 그대로여야 합니다.
    빌드 시각을 그냥 넣으면 매일 새 커밋이 생기고, 그때마다 Pull 을 해야 합니다.
    그래서 내용 해시를 버전으로 삼고, 해시가 같으면 기존 파일을 손대지 않습니다. */
-const body = { types: ORDER, K, cpm, chart, moves };
+const body = { types: ORDER, K, cpm, chart, moves, megaMoves };
 const ver = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);
 
 let built = new Date().toISOString().slice(0, 10);
@@ -102,4 +122,4 @@ if (fs.existsSync(OUT)) {
 fs.writeFileSync(OUT, JSON.stringify(Object.assign({ ver, built }, body)));
 
 const nf = Object.values(moves).filter(m => m.f).length;
-console.error(`pve.json — 기술 ${Object.keys(moves).length}개 (일반 ${nf} / 차지 ${Object.keys(moves).length - nf}) · 타입 ${ORDER.length} · CPM ${cpm.length} · ver ${ver} · 기준일 ${built} · ${fs.statSync(OUT).size} bytes`);
+console.error(`pve.json — 기술 ${Object.keys(moves).length}개 (일반 ${nf} / 차지 ${Object.keys(moves).length - nf}) · 메가전용기 ${Object.keys(megaMoves).length} · 타입 ${ORDER.length} · CPM ${cpm.length} · ver ${ver} · 기준일 ${built} · ${fs.statSync(OUT).size} bytes`);

@@ -54,6 +54,10 @@ h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
 .rrank{font-size:15px;min-width:46px;flex:none}
 .rname{flex:1;min-width:110px}
 .rmv{color:var(--mut);font-size:12.5px;flex:1;min-width:150px}
+.rnum{color:var(--dim);font-size:11.5px;flex:none;font-variant-numeric:tabular-nums}
+.exc{color:var(--accent);font-weight:600}
+.ralt{padding-top:2px;border-top:0;opacity:.65;padding-left:8px}
+.ralt .rmv{font-size:12px}
 .tab{
   flex:1;padding:7px 4px;font-size:13px;text-align:center;cursor:pointer;
   background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);
@@ -263,6 +267,11 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     레이드는 개체값 100짜리를 쓰는 게 정답이라 개체 판독이 의미가 없습니다.
     그래서 여기서는 <b style="color:var(--fg)">타입별 순위 · 기술배치 · 대기머 필요 여부</b>만 봅니다.
     진화 계통과 메가, 그림자를 모두 계산합니다.
+    기술배치는 좋은 순으로 <b style="color:var(--fg)">두 가지</b>를 냅니다 &mdash;
+    계산이 고른 것과 실제로 흔히 쓰는 것이 갈릴 때가 있어서입니다.
+    DPS·TDO 는 그 타입 1위를 100으로 놓은 상대값입니다.
+    기술 이름 뒤의 <span class="el">*</span> 는 <b style="color:var(--fg)">그 기술</b>에 대기머(특전기)가 필요하다는 뜻이고,
+    <span class="exc">파란 *</span> 는 메가레벨 4 에서 5000 메가에너지로 여는 전용 기술입니다.
   </div>
   <label class="field">
     <span class="lab">도감번호 · 이름 · 초성 · 별명</span>
@@ -458,9 +467,18 @@ let curForms=[], curPick=0;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+/* GAME_MASTER 쪽 표기가 KO_MOVE 키와 다른 것들.
+   한글명은 PokeAPI move_names.csv(language_id=3)에서 확인했습니다. */
+const MOVE_ALT = {
+ FUTURESIGHT:'미래예지', CRUSH_CLAW:'브레이크클로', LEECH_LIFE:'흡혈',
+ HORN_DRILL:'뿔드릴', FISSURE:'땅가르기', PYROBALL:'화염볼',
+ HIDDEN_POWER:'잠재파워', WRAP_GREEN:'김밥말이', WRAP_PINK:'김밥말이',
+ WATER_GUN_FAST_BLASTOISE:'물대포'
+};
 function moveKo(id){
   if(OV['mv:'+id]) return OV['mv:'+id];
   if(KO_MOVE[id]) return KO_MOVE[id];
+  if(MOVE_ALT[id]) return MOVE_ALT[id];
   let m;
   if(m=id.match(/^HIDDEN_POWER_(.+)$/)) return '히든파워('+(TYPE_KO[m[1].toLowerCase()]||m[1])+')';
   if(m=id.match(/^WEATHER_BALL_(.+)$/)) return '웨더볼('+(TYPE_KO[m[1].toLowerCase()]||m[1])+')';
@@ -872,6 +890,13 @@ function raidDmg(power,atk,stab,eff){
    TDO 는 얼마나 오래 버티며 딜을 넣는지로, 방어·체력이 함께 반영됩니다.
    상수는 모두에게 같으므로 순위에는 영향이 없어 생략했습니다. */
 const SE=1.6;                                  // 약점을 찌를 때의 배수
+/* 메가 전용 3번째 기술 (메가레벨 4 해금). pvpoke 기술풀에는 없어서 따로 얹습니다. */
+function megaMoveOf(p){
+  if(!PVE||!PVE.megaMoves) return null;
+  const m=p.speciesId.match(/_(mega(?:_[xy])?)$/); if(!m) return null;
+  const mv=PVE.megaMoves[p.dex+'_'+m[1]];
+  return mv?Object.assign({id:'MEGA_EXCLUSIVE'},mv):null;
+}
 function setsByType(p,shadow){
   const C40=cpm(RAID_LV);
   const atk=(p.baseStats.atk+15)*C40*(shadow?PVE.K.shadowAtk:1);
@@ -880,23 +905,35 @@ function setsByType(p,shadow){
   const bulk=hp*def;                           // TDO ∝ DPS × 체력 × 방어
   const el=new Set(p.eliteMoves||[]);
   const out={};
+  const exc=megaMoveOf(p);
+  const charged=(p.chargedMoves||[]).map(cid=>[cid,PVE.moves[cid],false]);
+  if(exc) charged.push([exc.base,exc,true]);          // 전용기는 원본 기술 이름으로 보여 줍니다
   for(const fid of (p.fastMoves||[])){
     const F=PVE.moves[fid]; if(!F||!F.f||F.e<=0) continue;
-    for(const cid of (p.chargedMoves||[])){
-      const C=PVE.moves[cid]; if(!C||C.f||C.e>=0) continue;
+    for(const [cid,C,isExc] of charged){
+      if(!C||C.f||C.e>=0) continue;
       const T=C.t;
       const fdm=raidDmg(F.p,atk,p.types.includes(F.t),F.t===T?SE:1);
       const cdm=raidDmg(C.p,atk,p.types.includes(T),SE);
       const n=Math.ceil(-C.e/F.e);
       const dps=(n*fdm+cdm)/((n*F.d+C.d)/1000);
-      const score=Math.pow(dps,4)*bulk;         // DPS³ × TDO = DPS⁴ × 체력 × 방어
-      const cur=out[T];
-      if(!cur||score>cur.score) out[T]={score,dps,f:fid,c:cid,elite:el.has(fid)||el.has(cid)};
+      const tdo=dps*bulk;
+      // 대기머는 기술마다 따로 표시합니다. 줄 끝에 하나만 붙이면
+      // "핥기 / 섀도볼 대기머*" 가 섀도볼이 대기머인 것처럼 읽힙니다.
+      const eF=el.has(fid), eC=!isExc&&el.has(cid);
+      (out[T]=out[T]||[]).push({score:Math.pow(dps,3)*tdo,dps,tdo,f:fid,c:cid,exc:isExc,
+        eF,eC,elite:eF||eC});
     }
+  }
+  for(const t in out){
+    const L=out[t]; L.sort((a,b)=>b.score-a.score);
+    // 1위가 전용기라면 둘째 자리는 "전용기를 안 열었을 때" 를 보여 줍니다.
+    // 5000 메가에너지를 쓸 값어치가 있는지 바로 견줄 수 있게.
+    const second = L[0].exc ? L.find(e=>!e.exc) : L[1];
+    out[t] = second ? [L[0],second] : [L[0]];
   }
   return out;
 }
-/* 그림자는 메가진화를 못 합니다. 원시회귀도 마찬가지입니다. */
 function canShadow(p){
   if(/_mega(_[xy])?$|_primal$/.test(p.speciesId)) return false;
   return (p.tags||[]).includes('shadoweligible') || IDX.has(p.speciesId+'_shadow');
@@ -909,10 +946,16 @@ function buildRanks(){
     if(/_shadow$/.test(p.speciesId)) continue;        // 그림자는 아래에서 따로 얹는다
     for(const sh of (canShadow(p)?[false,true]:[false])){
       const sets=setsByType(p,sh);
-      for(const t in sets) RANK[t].push(Object.assign({p,sh},sets[t]));
+      for(const t in sets) RANK[t].push(Object.assign({p,sh,alt:sets[t][1]||null},sets[t][0]));
     }
   }
-  for(const t in RANK) RANK[t].sort((a,b)=>b.score-a.score);
+  // 그 타입 1위를 100으로 잡고 상대값을 매긴다 (한 마리 탭의 "최적 대비 %" 와 같은 방식)
+  for(const t in RANK){
+    RANK[t].sort((a,b)=>b.score-a.score);
+    const ref=RANK[t][0]; if(!ref) continue;
+    const pct=e=>{ e.dpsP=Math.round(e.dps/ref.dps*100); e.tdoP=Math.round(e.tdo/ref.tdo*100); };
+    RANK[t].forEach(e=>{ pct(e); if(e.alt) pct(e.alt); });
+  }
 }
 /* 특정 포켓몬이 각 타입에서 몇 위인지 */
 function raidRanksOf(p,shadow){
@@ -925,14 +968,20 @@ function raidRanksOf(p,shadow){
 }
 const raidName=(p,sh)=>(sh?'그림자 ':'')+nameKo(p);
 
-function raidRow(e,showName){
+const mvOne=(id,isEl)=>isEl?'<span class="el">'+esc(moveKo(id))+'*</span>':esc(moveKo(id));
+const mvTxt=e=>mvOne(e.f,e.eF)+' / '+
+  (e.exc?'<span class="exc">'+esc(moveKo(e.c))+'*</span>':mvOne(e.c,e.eC));
+const numTxt=e=>'<span class="rnum">DPS '+e.dpsP+' · TDO '+e.tdoP+'</span>';
+function raidRow(e,showName,withAlt){
   const tc=TYPE_C[e.type]||'#6C8CD5';
-  return '<div class="rrow" style="--tc:'+tc+'">'+
+  let H='<div class="rrow" style="--tc:'+tc+'">'+
     '<span class="rtype" style="background:'+tc+'22;color:'+tc+'">'+esc(TYPE_KO[e.type]||e.type)+'</span>'+
     '<b class="rrank">'+e.rank+'위</b>'+
     (showName?'<span class="rname">'+esc(raidName(e.p,e.sh))+'</span>':'')+
-    '<span class="rmv">'+esc(moveKo(e.f))+' / '+esc(moveKo(e.c))+(e.elite?' <span class="el">대기머*</span>':'')+'</span>'+
-    '</div>';
+    '<span class="rmv">'+mvTxt(e)+'</span>'+numTxt(e)+'</div>';
+  if(withAlt&&e.alt)
+    H+='<div class="rrow ralt"><span class="rmv">'+mvTxt(e.alt)+'</span>'+numTxt(e.alt)+'</div>';
+  return H;
 }
 
 /* 검색한 포켓몬의 레이드 평가 — 진화 계통 · 메가 · 그림자를 모두 본다 */
@@ -950,7 +999,7 @@ function renderRaidMon(p){
     any=true;
     const tc=TYPE_C[sp.types[0]]||'#6C8CD5';
     H+='<div class="stage" style="--tc:'+tc+'"><div class="sthead"><b>'+esc(raidName(sp,sh))+'</b></div>'+
-       rs.map(e=>raidRow(e,false)).join('')+'</div>';
+       rs.map(e=>raidRow(e,false,true)).join('')+'</div>';
   }
   if(!any) H='<div class="empty">'+esc(nameKo(p))+' 는 어느 타입에서도 '+RAID_CUT+'위 안에 들지 않습니다. 레이드용으로는 쓰지 않는 편이 낫습니다.</div>';
   return H;
@@ -968,8 +1017,8 @@ $('#rtypes').addEventListener('click',e=>{
   rtOpen = (rtOpen===t)?null:t;
   [...$('#rtypes').children].forEach(c=>c.setAttribute('aria-pressed',c.dataset.rt===rtOpen));
   $('#rtout').innerHTML = rtOpen
-    ? '<div class="note">'+esc(TYPE_KO[rtOpen])+' 공격수 상위 30 — 대기머*가 붙은 자리는 그 기술을 배워야 나오는 순위입니다.</div>'+
-      RANK[rtOpen].slice(0,30).map((e,i)=>raidRow(Object.assign({},e,{type:rtOpen,rank:i+1}),true)).join('')
+    ? '<div class="note">'+esc(TYPE_KO[rtOpen])+' 공격수 상위 30. DPS·TDO 는 이 타입 1위를 100으로 놓은 상대값입니다. 기술 뒤의 * 는 그 기술을 따로 확보해야 한다는 뜻입니다.</div>'+
+      RANK[rtOpen].slice(0,30).map((e,i)=>raidRow(Object.assign({},e,{type:rtOpen,rank:i+1}),true,false)).join('')
     : '';
 });
 

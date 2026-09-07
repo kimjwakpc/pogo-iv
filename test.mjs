@@ -142,7 +142,7 @@ async function boot() {
   showStamp, parseTS, fmtDay, PATCHES,
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
   chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
-  setsByType, raidRanksOf, canShadow, raidDmg, buildRanks,
+  setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf,
   get PVE(){return PVE}, get RANK(){return RANK},
   get GM(){return GM}, get IDX(){return IDX}, get R15(){return R15}, get R25(){return R25},
   get CFG(){return CFG}
@@ -363,8 +363,10 @@ async function main() {
     check('손계산 DPS', dps.toFixed(4), '18.7059');
 
     const fight = T.setsByType(machamp, false).fighting;
-    check('괴력몬 격투 최적 조합 존재', !!fight, true);
-    check('엔진이 이보다 나쁜 조합을 고르지 않음', fight.dps >= dps - 1e-9, true);
+    check('괴력몬 격투 조합 목록', Array.isArray(fight) && fight.length > 0, true);
+    check('타입마다 두 개까지만 남김', fight.length <= 2, true);
+    check('좋은 순으로 정렬', fight.length < 2 || fight[0].score >= fight[1].score, true);
+    check('최고 조합이 손계산보다 나쁘지 않음', fight[0].dps >= dps - 1e-9, true);
   }
 
   // 그림자는 메가진화를 못 한다
@@ -380,7 +382,7 @@ async function main() {
     const mewtwo = T.IDX.get('mewtwo');
     const ice = T.setsByType(mewtwo, false).ice;
     const psy = T.setsByType(mewtwo, false).psychic;
-    check('뮤츠는 얼음보다 에스퍼에서 강함', psy.score > ice.score, true);
+    check('뮤츠는 얼음보다 에스퍼에서 강함', psy[0].score > ice[0].score, true);
   }
 
   // 그림자는 같은 개체의 일반형보다 반드시 세다
@@ -388,7 +390,7 @@ async function main() {
     const p = T.IDX.get('tyranitar');
     const a = T.setsByType(p, false), b = T.setsByType(p, true);
     const t = Object.keys(a)[0];
-    check('그림자 > 일반형', b[t].dps > a[t].dps, true);
+    check('그림자 > 일반형', b[t][0].dps > a[t][0].dps, true);
   }
 
   // 순위표 위생
@@ -400,12 +402,74 @@ async function main() {
     check('미출시 포켓몬 없음', unreleased.length, 0);
     const dupShadow = rock.filter(e => /_shadow$/.test(e.p.speciesId));
     check('_shadow 종을 따로 넣지 않음', dupShadow.length, 0);
-    // 대기머 표시가 실제 eliteMoves 와 맞는지
+    // 대기머 표시가 실제 eliteMoves 와 맞는지 — 기술마다 따로
     const wrong = rock.slice(0, 60).filter(e => {
       const el = new Set(e.p.eliteMoves || []);
-      return e.elite !== (el.has(e.f) || el.has(e.c));
+      return e.eF !== el.has(e.f) || e.eC !== (!e.exc && el.has(e.c));
     });
-    check('대기머 표시 정확', wrong.length, 0);
+    check('대기머 표시 정확 (기술별)', wrong.length, 0);
+  }
+
+  // 상대값(1위 = 100)
+  {
+    const rock = T.RANK.rock;
+    check('1위의 DPS% 가 100', rock[0].dpsP, 100);
+    check('1위의 TDO% 가 100', rock[0].tdoP, 100);
+    check('모든 항목에 상대값이 붙음', rock.every(e => Number.isFinite(e.dpsP) && Number.isFinite(e.tdoP)), true);
+    check('둘째 기술배치에도 상대값', rock.filter(e => e.alt).every(e => Number.isFinite(e.alt.dpsP)), true);
+    const withAlt = rock.filter(e => e.alt).length;
+    check('둘째 기술배치가 실제로 붙음', withAlt > 20, true);
+  }
+
+  // 메가 전용 3번째 기술 (메가레벨 4)
+  {
+    check('메가 전용기 13개', Object.keys(T.PVE.megaMoves).length, 13);
+    const dn = T.IDX.get('dragonite_mega');
+    const mv = T.megaMoveOf(dn);
+    check('메가 망나뇽 전용기 인식', mv && mv.base, 'OUTRAGE');
+    check('전용기는 일반 역린보다 강함', mv.p > T.PVE.moves.OUTRAGE.p, true);
+    check('메가가 아니면 전용기 없음', T.megaMoveOf(T.IDX.get('dragonite')), null);
+    check('전용기 없는 메가', T.megaMoveOf(T.IDX.get('charizard_mega_y')), null);
+
+    // 전용기가 실제로 조합 후보에 들어가고 exc 표시가 붙는지
+    const sets = T.setsByType(dn, false);
+    const drag = sets.dragon;
+    check('메가 망나뇽 드래곤 최적이 전용기', !!drag[0].exc, true);
+    check('둘째 자리는 전용기를 안 쓴 조합', !!drag[1] && !drag[1].exc, true);
+    check('전용기 쪽이 더 셈', drag[0].score > drag[1].score, true);
+
+    // 전용기를 쓰는 자리는 순위표에도 표시가 붙어야 한다
+    const excInRank = Object.values(T.RANK).flat().filter(e => e.exc);
+    check('순위표에 전용기 자리 있음', excInRank.length > 0, true);
+    check('전용기는 메가에만 붙음', excInRank.every(e => /_mega/.test(e.p.speciesId)), true);
+    check('전용기 자리는 그림자가 아님', excInRank.every(e => !e.sh), true);
+  }
+
+  // 기술 이름이 전부 한글로 나오는지 (영문이 새면 화면에 그대로 노출된다)
+  {
+    const ids = new Set([
+      ...Object.keys(T.PVE.moves),
+      ...T.GM.moves.map(m => m.moveId),
+      ...Object.values(T.PVE.megaMoves).map(m => m.base),
+    ]);
+    const bad = [...ids].filter(id => /[a-z]/.test(T.moveKo(id)));
+    check('한글로 안 바뀌는 기술', bad.length ? bad.join(', ') : '없음', '없음');
+  }
+
+  // 대기머는 해당 기술에만 붙어야 한다 (팬텀 핥기는 대기머, 섀도볼·오물폭탄은 아님)
+  {
+    const gg = T.IDX.get('gengar');
+    const el = new Set(gg.eliteMoves || []);
+    check('팬텀 대기머 목록에 핥기 있음', el.has('LICK'), true);
+    check('팬텀 대기머 목록에 섀도볼 없음', el.has('SHADOW_BALL'), false);
+    check('팬텀 대기머 목록에 오물폭탄 없음', el.has('SLUDGE_BOMB'), false);
+    const ghost = T.raidRanksOf(gg, false).find(e => e.type === 'ghost');
+    check('팬텀 고스트 자리 일반기가 핥기', ghost.f, 'LICK');
+    check('  그 일반기에 대기머 표시', ghost.eF, true);
+    check('  차지기(섀도볼)에는 표시 없음', ghost.eC, false);
+    const poison = T.raidRanksOf(gg, false).find(e => e.type === 'poison');
+    check('팬텀 독 자리 차지기가 오물폭탄', poison.c, 'SLUDGE_BOMB');
+    check('  그 차지기에는 표시 없음', poison.eC, false);
   }
 
   // 특정 포켓몬의 타입별 순위 조회
