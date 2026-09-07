@@ -59,7 +59,7 @@ node test.mjs --refresh   # pvpoke 데이터를 새로 받아 캐시 갱신
 - 포켓몬고 전용 코스튬 피카츄는 공식 한국어 표기를 확인하지 못해 `FORM_KEEP` 에 넣고 원문을 그대로 둡니다.
 - `test.mjs` 가 **매핑 안 된 폼 토큰이 하나라도 있으면 실패**시킵니다. pvpoke 에 새 폼이 들어오면 여기서 걸립니다.
 - **계산**: 내장 CPM 테이블 → `maxLevel()` 이분탐색 → 4096 IV 전수 → 스탯곱 정렬
-- **저장**: localStorage (`ivx_box` 보관함, `ivx_names` 이름수정, `ivx_cfg` 판정기준, `ivx_alias` 별명)
+- **저장**: localStorage (`ivx_box` 보관함, `ivx_names` 이름수정, `ivx_cfg` 판정기준·메가레벨, `ivx_alias` 별명)
 
 ## 검색
 
@@ -101,9 +101,32 @@ GAME_MASTER 의 `VM_MOVE_TEMP_EVOLUTION_MEGA[_X|_Y]_V####_POKEMON_XXX` 템플릿
 - 같은 이름의 일반 기술과 **다른 기술**입니다 (메가 망나뇽 역린: 전용 185위력 / 일반 110위력).
 - 1위 조합이 전용기면 **둘째 줄은 전용기를 안 쓴 조합**을 보여 줍니다. 5000 에너지를 쓸 값어치를 견주기 위해서입니다.
 
-메가레벨 자체의 효과는 레벨 1~4 가 같습니다 (팀 공격 보너스 자속 1.3 / 비자속 1.1).
+### 메가레벨과 전용기 위력 배율 — 검증 못 한 값이 하나 있습니다
+
+전용기 위력이 메가레벨에 비례한다는 정보가 있습니다 (레벨 1/2/3/4 = ×1 / ×1.1 / ×1.2 / ×1.3).
+**이 배율은 GAME_MASTER 에 없습니다.** `megaEvoLevelSettings.effects` 의 필드는 여섯 개뿐이고
+(`differentTypeAttackBoost`, `sameTypeAttackBoost`, `sameTypeExtraCatchCandy`, `sameTypeExtraCatchXp`,
+`sameTypeExtraCatchCandyXlChance`, `selfCpBoostAdditionalLevel`) 위력 배율은 없습니다.
+`VM_MOVE_*` 템플릿도 `power` 하나뿐이고 레벨 필드가 없습니다.
+
+그래서 `index.html` 의 `MEGA_PLUS` 에 **하드코딩**해 두고, 설정 탭에서 메가레벨을 고르게 했습니다
+(기본 4). 틀린 것으로 밝혀지면 1 로 두면 배율이 사라집니다.
+`tools/build-pve.mjs` 가 `megaEvoLevelSettings.effects` 에 못 보던 필드가 생기면 알려 주므로,
+그때 데이터 쪽을 정본으로 삼아 옮기세요.
+
+배율이 순위에 미치는 영향(레벨 1 → 4): 칼라마네로 에스퍼 21위→9위, 우츠보트 독 3위→1위,
+Y 라이츄 전기 2위→1위, 무장조 비행 4위→2위. 작지 않습니다.
+
+메가레벨의 **다른** 효과는 레벨 1~4 가 같습니다 (팀 공격 보너스 자속 1.3 / 비자속 1.1).
 레벨 4 만 `selfCpBoostAdditionalLevel: 2` 로 자기 CP 를 2레벨 올려 주는데, 공격 기준 약 +1.3% 라
 순위에 영향이 없어 계산에 넣지 않았습니다.
+
+### 검색한 포켓몬을 어디까지 보여 주나
+
+잡는 건 진화 전이라도 레이드에서 실제로 쓰는 건 최종 진화형과 그 메가입니다.
+그래서 `raidForms()` 가 **계통의 각 단계마다** `megaOf()` 를 겁니다.
+검색어에만 `megaOf` 를 걸면 딥상어동으로 메가 한카리아스를 못 봅니다 (2026-09-08 에 이 버그가 있었습니다).
+검색한 포켓몬 자체가 순위 밖이면 "진화시켰을 때의 자리를 냅니다" 라고 밝힙니다.
 
 ### 순위 계산
 

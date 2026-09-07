@@ -271,7 +271,8 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     계산이 고른 것과 실제로 흔히 쓰는 것이 갈릴 때가 있어서입니다.
     DPS·TDO 는 그 타입 1위를 100으로 놓은 상대값입니다.
     기술 이름 뒤의 <span class="el">*</span> 는 <b style="color:var(--fg)">그 기술</b>에 대기머(특전기)가 필요하다는 뜻이고,
-    <span class="exc">파란 *</span> 는 메가레벨 4 에서 5000 메가에너지로 여는 전용 기술입니다.
+    <span class="exc">파란 *</span> 는 메가 전용 기술입니다.
+    전용 기술 위력은 메가레벨에 비례하며, 지금은 <b id="mlv" style="color:var(--fg)"></b> 기준으로 계산합니다 (설정에서 바꿉니다).
   </div>
   <label class="field">
     <span class="lab">도감번호 · 이름 · 초성 · 별명</span>
@@ -309,6 +310,20 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
     <span class="lab">메타 인정 순위 (이 순위 밖이면 정리)</span>
     <input class="tin" id="metaN" inputmode="numeric" value="200">
   </label>
+  <label class="field">
+    <span class="lab">메가레벨 (전용 기술 위력 배율)</span>
+    <select class="tin" id="megaLv">
+      <option value="1">1 — 배율 없음</option>
+      <option value="2">2 — 1.1배</option>
+      <option value="3">3 — 1.2배</option>
+      <option value="4">4 슈퍼맥스 — 1.3배</option>
+    </select>
+  </label>
+  <div class="note">
+    레이드 탭의 <b class="exc">전용*</b> 기술에만 적용됩니다.
+    이 배율은 게임 데이터(GAME_MASTER)에 들어 있지 않아 확인하지 못했습니다 &mdash;
+    공개된 수치를 옮겨 적은 것이니, 틀렸다 싶으면 1 로 두시면 됩니다.
+  </div>
   <button class="btn" id="saveset">기준 저장</button>
 
   <div class="note" style="margin-top:26px">
@@ -461,7 +476,7 @@ let PVE=null, RANK=null;                      // 레이드용 PvE 수치와 타�
 let OV = JSON.parse(localStorage.getItem('ivx_names')||'{}');
 let ALIAS = JSON.parse(localStorage.getItem('ivx_alias')||'{}');   // 별명 → speciesId
 let BOX = JSON.parse(localStorage.getItem('ivx_box')||'[]');
-let CFG = Object.assign({thr:99,metaN:200}, JSON.parse(localStorage.getItem('ivx_cfg')||'{}'));
+let CFG = Object.assign({thr:99,metaN:200,megaLv:4}, JSON.parse(localStorage.getItem('ivx_cfg')||'{}'));
 let curForms=[], curPick=0;
 
 const $=s=>document.querySelector(s);
@@ -890,6 +905,14 @@ function raidDmg(power,atk,stab,eff){
    TDO 는 얼마나 오래 버티며 딜을 넣는지로, 방어·체력이 함께 반영됩니다.
    상수는 모두에게 같으므로 순위에는 영향이 없어 생략했습니다. */
 const SE=1.6;                                  // 약점을 찌를 때의 배수
+
+/* 메가 전용("플러스") 기술의 위력은 메가레벨에 비례합니다.
+   주의 — 이 배율은 **GAME_MASTER 에 없습니다.** 커뮤니티에 공개된 수치를 옮겨 적은 것입니다
+   (2026-09-08 기준, 게임 데이터를 뒤져도 관련 필드가 없어 검증하지 못했습니다).
+   틀린 것으로 밝혀지면 설정에서 메가레벨을 1 로 두면 배율이 사라집니다.
+   나중에 GAME_MASTER 에 배율 필드가 생기면 tools/build-pve.mjs 가 알려 줍니다. */
+const MEGA_PLUS=[1,1,1.1,1.2,1.3];             // 인덱스 = 메가레벨
+const megaPlusMult=()=>MEGA_PLUS[CFG.megaLv]||1;
 /* 메가 전용 3번째 기술 (메가레벨 4 해금). pvpoke 기술풀에는 없어서 따로 얹습니다. */
 function megaMoveOf(p){
   if(!PVE||!PVE.megaMoves) return null;
@@ -914,7 +937,7 @@ function setsByType(p,shadow){
       if(!C||C.f||C.e>=0) continue;
       const T=C.t;
       const fdm=raidDmg(F.p,atk,p.types.includes(F.t),F.t===T?SE:1);
-      const cdm=raidDmg(C.p,atk,p.types.includes(T),SE);
+      const cdm=raidDmg(C.p*(isExc?megaPlusMult():1),atk,p.types.includes(T),SE);
       const n=Math.ceil(-C.e/F.e);
       const dps=(n*fdm+cdm)/((n*F.d+C.d)/1000);
       const tdo=dps*bulk;
@@ -986,26 +1009,45 @@ function raidRow(e,showName,withAlt){
 
 /* 검색한 포켓몬의 레이드 평가 — 진화 계통 · 메가 · 그림자를 모두 본다 */
 const RAID_CUT=100;                       // 이 순위 밖은 굳이 보여주지 않는다
+/* 레이드에서 볼 후보 전부.
+   잡는 건 진화 전이라도 실제로 쓰는 건 최종 진화형과 그 메가입니다.
+   그래서 계통을 끝까지 따라가고, **각 단계마다** 메가를 찾습니다.
+   (검색어에만 megaOf 를 걸면 딥상어동으로 메가 한카리아스를 못 봅니다.) */
+function raidForms(p){
+  const forms=[], chain=chainOf(p);
+  chain.forEach(sp=>{
+    forms.push([sp,false]);
+    megaOf(sp).forEach(m=>forms.push([m,false]));
+  });
+  chain.forEach(sp=>{ if(canShadow(sp)) forms.push([sp,true]); });
+  return forms;
+}
 function renderRaidMon(p){
-  const forms=[];
-  chainOf(p).forEach(sp=>forms.push([sp,false]));
-  megaOf(p).forEach(sp=>forms.push([sp,false]));
-  chainOf(p).forEach(sp=>{ if(canShadow(sp)) forms.push([sp,true]); });
-
-  let H='', any=false;
+  const forms=raidForms(p);
+  let H='', any=false, shown=0;
   for(const [sp,sh] of forms){
     const rs=raidRanksOf(sp,sh).filter(e=>e.rank<=RAID_CUT);
     if(!rs.length) continue;
-    any=true;
+    any=true; shown++;
     const tc=TYPE_C[sp.types[0]]||'#6C8CD5';
     H+='<div class="stage" style="--tc:'+tc+'"><div class="sthead"><b>'+esc(raidName(sp,sh))+'</b></div>'+
        rs.map(e=>raidRow(e,false,true)).join('')+'</div>';
   }
-  if(!any) H='<div class="empty">'+esc(nameKo(p))+' 는 어느 타입에서도 '+RAID_CUT+'위 안에 들지 않습니다. 레이드용으로는 쓰지 않는 편이 낫습니다.</div>';
-  return H;
+  if(!any) return '<div class="empty">'+esc(nameKo(p))+' 는 진화 계통과 메가를 다 따져도 어느 타입에서도 '+
+    RAID_CUT+'위 안에 들지 않습니다. 레이드용으로는 쓰지 않는 편이 낫습니다.</div>';
+  // 검색한 그 포켓몬이 목록에 없으면(=순위 밖) 무엇을 보여 주는 것인지 밝힌다
+  const self=raidRanksOf(p,false).some(e=>e.rank<=RAID_CUT);
+  const head = self
+    ? (shown>1?'<div class="note">진화 계통과 메가, 그림자를 모두 계산했습니다.</div>':'')
+    : '<div class="note">'+esc(nameKo(p))+' 자체는 '+RAID_CUT+'위 밖입니다. 진화시켰을 때의 자리를 냅니다.</div>';
+  return head+H;
 }
 
+function showMegaLv(){
+  const e=$('#mlv'); if(e) e.textContent='메가레벨 '+CFG.megaLv+' (×'+megaPlusMult().toFixed(1)+')';
+}
 function renderRaidTypes(){
+  showMegaLv();
   if(!PVE||!RANK) return;
   $('#rtypes').innerHTML = PVE.types.map(t=>
     '<button class="fchip" data-rt="'+t+'" style="border-color:'+(TYPE_C[t]||'#6C8CD5')+'55">'+esc(TYPE_KO[t]||t)+'</button>').join('');
@@ -1060,10 +1102,14 @@ $('#bxfile').onchange=e=>{
 };
 
 /* ---------- settings ---------- */
-$('#thr').value=CFG.thr; $('#metaN').value=CFG.metaN;
+$('#thr').value=CFG.thr; $('#metaN').value=CFG.metaN; $('#megaLv').value=CFG.megaLv;
 $('#saveset').onclick=()=>{
-  CFG={thr:parseFloat($('#thr').value)||99,metaN:parseInt($('#metaN').value)||200};
-  localStorage.setItem('ivx_cfg',JSON.stringify(CFG)); renderBox(); alert('저장했습니다.');
+  CFG={thr:parseFloat($('#thr').value)||99,metaN:parseInt($('#metaN').value)||200,
+       megaLv:Math.min(4,Math.max(1,parseInt($('#megaLv').value)||4))};
+  if(PVE&&RANK) buildRanks();          // 배율이 바뀌면 순위를 다시 만든다
+  localStorage.setItem('ivx_cfg',JSON.stringify(CFG));
+  showMegaLv(); renderBox(); rtOpen=null; $('#rtout').innerHTML=''; $('#rout').innerHTML='';
+  alert('저장했습니다.');
 };
 function renderOv(){
   const ks=Object.keys(OV);

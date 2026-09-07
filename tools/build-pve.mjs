@@ -63,6 +63,21 @@ for (const t of raw) {
     { t: T(m.pokemonType), p: m.power || 0, d: m.durationMs, e: m.energyDelta || 0, f: 0, base };
 }
 
+/* 감시: 메가레벨별 위력 배율이 GAME_MASTER 에 생기면 알려 준다.
+   지금은 데이터에 없어서 앱이 커뮤니티 공개 수치(1 / 1.1 / 1.2 / 1.3)를 하드코딩하고 있습니다.
+   여기 새 필드가 뜨면 그걸 정본으로 삼아 pve.json 에 실어야 합니다. */
+const KNOWN_EFFECTS = new Set(['differentTypeAttackBoost','sameTypeAttackBoost','sameTypeExtraCatchCandy',
+  'sameTypeExtraCatchXp','sameTypeExtraCatchCandyXlChance','selfCpBoostAdditionalLevel']);
+const newEffects = new Set();
+for (const t of raw) {
+  const m = t.data.megaEvoLevelSettings;
+  if (!m || !m.effects) continue;
+  for (const k of Object.keys(m.effects)) if (!KNOWN_EFFECTS.has(k)) newEffects.add(k);
+}
+if (newEffects.size)
+  console.error(`※ 메가레벨 효과에 못 보던 필드가 생겼습니다: ${[...newEffects].join(', ')}\n` +
+                `   위력 배율이라면 index.html 의 MEGA_PLUS 하드코딩을 이 값으로 바꾸세요.`);
+
 /* 타입 상성: chart[공격타입][방어타입]
    주의 — GAME_MASTER 의 POKEMON_TYPE_* 템플릿은 알파벳 순으로 나오지만
    attackScalar 배열의 인덱스는 아래 고정 순서를 따릅니다. 헷갈리면 상성표가

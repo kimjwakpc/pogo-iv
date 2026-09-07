@@ -142,7 +142,8 @@ async function boot() {
   showStamp, parseTS, fmtDay, PATCHES,
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
   chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
-  setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf,
+  setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf, raidForms, renderRaidMon,
+  MEGA_PLUS, megaPlusMult, showMegaLv,
   get PVE(){return PVE}, get RANK(){return RANK},
   get GM(){return GM}, get IDX(){return IDX}, get R15(){return R15}, get R25(){return R25},
   get CFG(){return CFG}
@@ -470,6 +471,60 @@ async function main() {
     const poison = T.raidRanksOf(gg, false).find(e => e.type === 'poison');
     check('팬텀 독 자리 차지기가 오물폭탄', poison.c, 'SLUDGE_BOMB');
     check('  그 차지기에는 표시 없음', poison.eC, false);
+  }
+
+  // 진화 전 포켓몬을 넣어도 최종 진화형과 그 메가까지 나와야 한다
+  {
+    const nm = (sp, sh) => (sh ? '그림자 ' : '') + T.nameKo(sp);
+    const formsOf = q => T.raidForms(T.search(q)[0]).map(([sp, sh]) => nm(sp, sh));
+    const blocksOf = q => [...T.renderRaidMon(T.search(q)[0])
+      .matchAll(/<div class="sthead"><b>(.*?)<\/b>/g)].map(m => m[1]);
+
+    const evoCases = [
+      ['딥상어동', '메가 한카리아스'],   // 커뮤데이에 진화시킬 개체
+      ['뿔충이', '메가 독침붕'],
+      ['고오스', '메가 팬텀'],
+      ['롱스톤', '메가 강철톤'],
+      ['이상해씨', '메가 이상해꽃'],
+    ];
+    for (const [from, want] of evoCases) {
+      check(`${from} → 후보에 ${want}`, formsOf(from).includes(want), true);
+      check(`${from} → 화면에 ${want}`, blocksOf(from).includes(want), true);
+    }
+    // 메가가 없는 계통은 그대로
+    check('파라꼬 후보에 메가 없음', formsOf('파라꼬').some(n => n.startsWith('메가')), false);
+    check('파라꼬도 아머까오는 나옴', blocksOf('파라꼬').includes('아머까오'), true);
+    // 그림자 메가는 여전히 없어야 한다
+    check('후보에 그림자 메가 없음', formsOf('고오스').some(n => n.startsWith('그림자 메가')), false);
+  }
+
+  // 메가레벨에 따른 전용기 위력 배율
+  {
+    check('배율표', JSON.stringify(T.MEGA_PLUS), '[1,1,1.1,1.2,1.3]');
+    check('기본 메가레벨 4', T.CFG.megaLv, 4);
+    check('기본 배율 1.3', T.megaPlusMult(), 1.3);
+
+    const dn = T.IDX.get('dragonite_mega');
+    const at4 = T.setsByType(dn, false).dragon[0];
+    T.CFG.megaLv = 1;
+    const at1 = T.setsByType(dn, false).dragon[0];
+    check('레벨 1 에서는 배율 없음', T.megaPlusMult(), 1);
+    check('레벨 4 가 레벨 1 보다 셈', at4.dps > at1.dps, true);
+    check('레벨 1 에서도 전용기가 최적', !!at1.exc, true);
+
+    // 배율은 전용기에만 걸린다 — 전용기 없는 메가는 레벨을 바꿔도 그대로
+    const cz = T.IDX.get('charizard_mega_y');
+    const a = T.setsByType(cz, false).fire[0].dps;
+    T.CFG.megaLv = 4;
+    const b = T.setsByType(cz, false).fire[0].dps;
+    check('전용기 없는 메가는 영향 없음', a, b);
+
+    // 순위표를 다시 만들면 반영된다
+    T.CFG.megaLv = 1; T.buildRanks();
+    const r1 = T.RANK.psychic.findIndex(e => e.p.speciesId === 'malamar_mega' && !e.sh) + 1;
+    T.CFG.megaLv = 4; T.buildRanks();
+    const r4 = T.RANK.psychic.findIndex(e => e.p.speciesId === 'malamar_mega' && !e.sh) + 1;
+    check('메가 칼라마네로 레벨1 순위가 더 낮음', r1 > r4, true);
   }
 
   // 특정 포켓몬의 타입별 순위 조회
