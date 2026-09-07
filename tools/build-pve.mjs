@@ -14,6 +14,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const SRC = 'https://raw.githubusercontent.com/PokeMiners/game_masters/master/latest/latest.json';
 const OUT = path.resolve(process.cwd(), 'pve.json');
@@ -82,11 +83,23 @@ const K = {
 /* CPM (레벨 1 ~ 50, 0.5 단위) */
 const cpm = raw.find(t => t.data.playerLevel).data.playerLevel.cpMultiplier;
 
-const out = {
-  built: new Date().toISOString().slice(0, 19).replace('T', ' '),
-  types: ORDER, K, cpm, chart, moves,
-};
-fs.writeFileSync(OUT, JSON.stringify(out));
+/* 내용이 그대로면 파일도 그대로여야 합니다.
+   빌드 시각을 그냥 넣으면 매일 새 커밋이 생기고, 그때마다 Pull 을 해야 합니다.
+   그래서 내용 해시를 버전으로 삼고, 해시가 같으면 기존 파일을 손대지 않습니다. */
+const body = { types: ORDER, K, cpm, chart, moves };
+const ver = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);
+
+let built = new Date().toISOString().slice(0, 10);
+if (fs.existsSync(OUT)) {
+  try {
+    const old = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+    if (old.ver === ver) {
+      console.error(`pve.json — 내용 그대로 (ver ${ver}, 기준일 ${old.built}). 건드리지 않습니다.`);
+      process.exit(0);
+    }
+  } catch { /* 깨진 파일이면 새로 만든다 */ }
+}
+fs.writeFileSync(OUT, JSON.stringify(Object.assign({ ver, built }, body)));
 
 const nf = Object.values(moves).filter(m => m.f).length;
-console.error(`pve.json — 기술 ${Object.keys(moves).length}개 (일반 ${nf} / 차지 ${Object.keys(moves).length - nf}) · 타입 ${ORDER.length} · CPM ${cpm.length} · ${fs.statSync(OUT).size} bytes`);
+console.error(`pve.json — 기술 ${Object.keys(moves).length}개 (일반 ${nf} / 차지 ${Object.keys(moves).length - nf}) · 타입 ${ORDER.length} · CPM ${cpm.length} · ver ${ver} · 기준일 ${built} · ${fs.statSync(OUT).size} bytes`);

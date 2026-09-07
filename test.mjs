@@ -225,7 +225,9 @@ async function main() {
   // 데이터 기준일 표시
   const ts = T.parseTS(T.GM.timestamp);
   check('gamemaster timestamp 해석', ts instanceof Date && !isNaN(ts), true);
-  check('기준일 문구에 날짜 포함', T.$('#stat').innerHTML.includes(T.fmtDay(ts)), true);
+  check('기준일 문구에 pvpoke 날짜 포함', T.$('#stat').innerHTML.includes(T.fmtDay(ts)), true);
+  check('기준일 문구에 레이드 자료 표시', T.$('#stat').innerHTML.includes('레이드'), true);
+  check('pve.json 에 버전 해시', /^[0-9a-f]{12}$/.test(T.PVE.ver || ''), true);
   {
     const keep = T.PATCHES.slice();
     const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -243,6 +245,13 @@ async function main() {
     // 아직 오지 않은 패치 → 알리지 않는다
     only(new Date(Date.now() + 3 * 86400000), '미래 패치');
     check('아직 안 온 패치 → 알림 꺼짐', T.$('#dbar').className, 'dbar');
+
+    // 레이드 자료만 오래됐을 때 — 그쪽을 콕 집어 말해야 한다
+    const realBuilt = T.PVE.built;
+    T.PVE.built = '2020-01-01';
+    only(new Date(Date.now() - 86400000), '레이드만 밀린 패치');
+    check('레이드 자료가 밀리면 그렇게 말함', T.$('#dbar').innerHTML.includes('레이드 순위와 기술 수치'), true);
+    T.PVE.built = realBuilt;
 
     T.PATCHES.length = 0; keep.forEach(p => T.PATCHES.push(p));
     T.showStamp();

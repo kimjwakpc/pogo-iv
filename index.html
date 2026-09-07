@@ -524,16 +524,24 @@ function parseTS(s){
 }
 const fmtDay=d=>(d.getMonth()+1)+'월 '+d.getDate()+'일';
 function showStamp(){
-  const bar=$('#dbar'), ts=parseTS(GM&&GM.timestamp);
-  if(!ts){ $('#stat').textContent='pvpoke 기준 · '+GM.pokemon.length+'종'; bar.className='dbar'; return; }
-  const now=new Date(), days=Math.floor((now-ts)/86400000);
-  $('#stat').innerHTML='pvpoke <b>'+fmtDay(ts)+'</b> 자료'+(days>0?' · '+days+'일 전':'')+'<br>'+GM.pokemon.length+'종 · 슈퍼 '+R15.size+' · 하이퍼 '+R25.size;
-  // 이미 지난 패치 중 가장 최근 것
+  const bar=$('#dbar'), now=new Date();
+  // 자료가 두 갈래입니다. PvP 순위는 pvpoke, 레이드 수치는 pve.json.
+  const srcs=[
+    {n:'pvpoke',   ts:parseTS(GM&&GM.timestamp),  what:'리그 순위와 정석 기술'},
+    {n:'레이드',    ts:parseTS(PVE&&PVE.built),    what:'레이드 순위와 기술 수치'},
+  ].filter(x=>x.ts);
+  if(!srcs.length){ $('#stat').textContent='pvpoke 기준 · '+GM.pokemon.length+'종'; bar.className='dbar'; return; }
+
+  $('#stat').innerHTML = srcs.map(x=>x.n+' <b>'+fmtDay(x.ts)+'</b>').join(' · ')+
+    '<br>'+GM.pokemon.length+'종 · 슈퍼 '+R15.size+' · 하이퍼 '+R25.size;
+
+  // 이미 지난 패치 중 가장 최근 것보다 오래된 자료가 있는가
   const due=PATCHES.map(p=>[parseTS(p[0]),p[1]]).filter(p=>p[0]&&p[0]<=now).sort((x,y)=>y[0]-x[0])[0];
-  if(due && ts<due[0]){
+  const late = due ? srcs.filter(x=>x.ts<due[0]) : [];
+  if(late.length){
     bar.innerHTML='<b>'+fmtDay(due[0])+' '+esc(due[1])+'</b>가 아직 반영되지 않았습니다. '+
-      '지금 보이는 순위와 정석 기술은 '+fmtDay(ts)+' 자료 기준입니다. '+
-      'pvpoke가 갱신되면 자동으로 바뀝니다.<button id="dre" type="button">다시 받기</button>';
+      late.map(x=>x.what+'은 '+fmtDay(x.ts)+' 자료입니다').join(', ')+'. '+
+      '갱신되면 자동으로 바뀝니다.<button id="dre" type="button">다시 받기</button>';
     bar.className='dbar on';
   } else bar.className='dbar';
 }
