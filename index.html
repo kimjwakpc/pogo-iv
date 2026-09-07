@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>개체값 판독기</title>
+<style>
+:root{
+  --ink:#0E1420; --panel:#172132; --panel2:#1F2B3F; --line:#2C3A52;
+  --fg:#E8EDF5; --mut:#8798B2; --dim:#5D6E88;
+  --keep:#3FBF7F; --cull:#E0525F; --hold:#E9B949;
+  --accent:#6C8CD5;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ink); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic","Segoe UI",sans-serif;
+  font-size:15px; line-height:1.5;
+  padding:0 0 64px; -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:680px;margin:0 auto;padding:0 14px}
+h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+.top{
+  position:sticky;top:0;z-index:20;background:rgba(14,20,32,.94);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+}
+.topin{max-width:680px;margin:0 auto;padding:10px 14px}
+.brow{display:flex;align-items:baseline;gap:10px;justify-content:space-between}
+.stat{font-size:11.5px;color:var(--dim);text-align:right;line-height:1.35;flex:none}
+.stat b{color:var(--mut);font-weight:600}
+/* 데이터 기준일 알림 */
+.dbar{
+  display:none;margin:14px 0 0;padding:9px 11px;border-radius:8px;
+  background:rgba(233,185,73,.10);border:1px solid rgba(233,185,73,.42);
+  color:var(--hold);font-size:12.5px;line-height:1.55;
+}
+.dbar.on{display:block}
+.dbar b{color:var(--fg);font-weight:600}
+.dbar button{
+  margin-left:8px;font-family:inherit;font-size:12px;cursor:pointer;
+  background:none;border:1px solid rgba(233,185,73,.55);color:var(--hold);
+  border-radius:6px;padding:2px 9px;
+}
+.dbar button:disabled{opacity:.5;cursor:default}
+.tabs{display:flex;gap:2px;margin-top:9px}
+.tab{
+  flex:1;padding:7px 4px;font-size:13px;text-align:center;cursor:pointer;
+  background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);
+  font-family:inherit;
+}
+.tab[aria-selected=true]{color:var(--fg);border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* inputs */
+.field{display:block;margin:14px 0 0}
+.lab{font-size:12px;color:var(--mut);margin-bottom:5px}
+input,textarea,select,button{font-family:inherit;font-size:15px}
+.tin{
+  width:100%;padding:11px 12px;background:var(--panel);color:var(--fg);
+  border:1px solid var(--line);border-radius:7px;
+}
+.tin:focus{outline:none;border-color:var(--accent)}
+textarea.tin{min-height:120px;resize:vertical;font-size:14px;line-height:1.7}
+.ivrow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.ivbox{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 8px}
+.ivbox label{display:block;font-size:11px;color:var(--mut);margin-bottom:3px}
+.ivbox input{
+  width:100%;background:none;border:0;color:var(--fg);
+  font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;padding:0;
+}
+.ivbox input:focus{outline:none}
+.ivbox.cp input{color:var(--mut);font-weight:500}
+.btn{
+  display:block;width:100%;margin-top:12px;padding:12px;border-radius:7px;
+  background:var(--accent);color:#0B1020;border:0;font-weight:600;cursor:pointer;
+}
+.btn:active{opacity:.85}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--mut);font-weight:500}
+.btnrow{display:flex;gap:8px}
+.btnrow .btn{margin-top:12px}
+.chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;color:var(--mut)}
+.chk input{width:17px;height:17px;accent-color:var(--accent)}
+
+/* form picker */
+.forms{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fchip{
+  padding:6px 11px;border-radius:99px;font-size:13px;cursor:pointer;
+  background:var(--panel);border:1px solid var(--line);color:var(--mut);
+}
+.fchip[aria-pressed=true]{background:var(--panel2);border-color:var(--accent);color:var(--fg)}
+
+/* result */
+.res{margin-top:22px}
+.hdr{border-top:3px solid var(--tc,#6C8CD5);padding-top:11px}
+.nm{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.nm b{font-size:22px;font-weight:650;letter-spacing:-.02em}
+.dex{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
+.edit{background:none;border:0;color:var(--dim);cursor:pointer;font-size:12px;padding:2px 5px}
+.edit:hover{color:var(--fg)}
+.types{display:flex;gap:5px;margin-top:7px}
+.ty{font-size:11.5px;padding:2px 8px;border-radius:99px;color:#0B1020;font-weight:600}
+
+.verdict{
+  margin-top:14px;padding:11px 13px;border-radius:8px;
+  display:flex;align-items:center;gap:10px;font-size:14px;
+}
+.verdict b{font-size:15px}
+.v-keep{background:rgba(63,191,127,.13);color:var(--keep)}
+.v-cull{background:rgba(224,82,95,.13);color:var(--cull)}
+.v-hold{background:rgba(233,185,73,.13);color:var(--hold)}
+
+.lg{margin-top:16px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.lgh{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 13px;background:var(--panel);border-bottom:1px solid var(--line);
+}
+.lgh span{font-size:13px;color:var(--mut)}
+.rank{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.lgb{padding:12px 13px;background:var(--panel2)}
+.big{display:flex;align-items:baseline;gap:7px}
+.big em{
+  font-style:normal;font-size:34px;font-weight:700;line-height:1;
+  font-variant-numeric:tabular-nums;letter-spacing:-.03em;
+}
+.big i{font-style:normal;font-size:13px;color:var(--mut)}
+.bar{height:4px;background:var(--line);border-radius:99px;margin-top:10px;overflow:hidden}
+.bar div{height:100%;border-radius:99px;background:var(--tc,#6C8CD5)}
+.kv{display:flex;flex-wrap:wrap;gap:x;margin-top:10px;font-size:13px}
+.kv>div{margin-right:16px}
+.kv b{font-variant-numeric:tabular-nums;font-weight:600}
+.kv span{color:var(--mut)}
+.mv{margin-top:9px;font-size:13.5px;line-height:1.6}
+.mv .fast{color:var(--fg)}
+.mv .el{color:var(--hold)}
+.na{padding:12px 13px;background:var(--panel2);font-size:13.5px;color:var(--dim)}
+
+.note{margin-top:14px;font-size:12.5px;color:var(--dim);line-height:1.6}
+
+
+/* stage blocks */
+.stage{margin-top:14px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.sthead{
+  display:flex;align-items:center;gap:9px;padding:9px 13px;
+  background:var(--panel);border-left:3px solid var(--tc,#6C8CD5);
+}
+.sthead b{font-size:15.5px;font-weight:650}
+.sthead .sub{font-size:11px;color:var(--hold);border:1px solid var(--hold);padding:0 5px;border-radius:4px}
+.sthead .types{display:flex;gap:4px;margin-left:auto}
+.lgrow{display:flex;gap:10px;padding:11px 13px;background:var(--panel2);border-top:1px solid var(--line)}
+.lgname{width:44px;flex:none;font-size:12.5px;color:var(--mut);padding-top:3px}
+.lgmain{flex:1;min-width:0}
+.lgna{font-size:13px;color:var(--dim);padding-top:3px}
+.big{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.big em{font-style:normal;font-size:27px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.big i{font-style:normal;font-size:12.5px;color:var(--mut)}
+.big i.lr{margin-left:auto;color:var(--fg)}
+.big i.lr.dim{color:var(--dim)}
+
+.lgtop{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.lrank{font-size:15px;font-weight:650}
+.lrank.dim{color:var(--dim);font-weight:500;font-size:13.5px}
+.mrank{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
+.mrank b{font-size:20px;color:var(--fg);font-weight:700;letter-spacing:-.02em}
+.ivline{display:flex;align-items:baseline;gap:11px;margin-top:6px;font-size:13px;
+  font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.ivline b{font-weight:650}
+.ivline span{color:var(--mut)}
+.ivline .tagl{width:30px;flex:none;font-size:11.5px;color:var(--dim)}
+.ivline.now{color:var(--fg)}
+.ivline.best{color:var(--mut)}
+.ivline.best b{color:var(--mut);font-weight:600}
+.warn{margin-top:7px;font-size:12.5px;color:var(--cull)}
+.elite{padding:8px 13px;background:var(--panel);border-top:1px solid var(--line);font-size:12px;color:var(--hold)}
+
+/* table */
+table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+th,td{padding:7px 6px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:11.5px}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{font-size:11px;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.t-keep{background:rgba(63,191,127,.16);color:var(--keep)}
+.t-cull{background:rgba(224,82,95,.16);color:var(--cull)}
+.t-hold{background:rgba(233,185,73,.16);color:var(--hold)}
+.rowbtn{background:none;border:0;color:var(--dim);cursor:pointer;font-size:15px;padding:0 4px}
+.rowbtn:hover{color:var(--cull)}
+
+.empty{margin-top:26px;color:var(--dim);font-size:13.5px;line-height:1.7}
+.err{margin-top:14px;color:var(--cull);font-size:13.5px}
+.hide{display:none!important}
+.load{margin-top:30px;color:var(--mut);font-size:13.5px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="topin">
+    <div class="brow">
+      <h1>개체값 판독기</h1>
+      <div class="stat" id="stat">데이터 불러오는 중…</div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-t="one">한 마리</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="bulk">여러 마리</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="box">내 보관함</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="set">설정</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<div id="dbar" class="dbar" role="status"></div>
+
+<!-- ONE -->
+<section id="p-one">
+  <label class="field">
+    <span class="lab">도감번호 또는 이름</span>
+    <input class="tin" id="q" placeholder="823 · 아머까오 · 파라꼬" autocomplete="off" enterkeyhint="search">
+  </label>
+  <div class="forms hide" id="forms"></div>
+  <div class="ivrow">
+    <div class="ivbox"><label for="ia">공격</label><input id="ia" inputmode="numeric" placeholder="0"></div>
+    <div class="ivbox"><label for="id_">방어</label><input id="id_" inputmode="numeric" placeholder="15"></div>
+    <div class="ivbox"><label for="ih">체력</label><input id="ih" inputmode="numeric" placeholder="15"></div>
+    <div class="ivbox cp"><label for="icp">현재 CP</label><input id="icp" inputmode="numeric" placeholder="선택"></div>
+  </div>
+  <label class="chk"><input type="checkbox" id="legacy"> 이벤트 특전기를 습득한 개체</label>
+  <button class="btn" id="go">판정하기</button>
+  <div id="err" class="err hide"></div>
+  <div id="res" class="res"></div>
+</section>
+
+<!-- BULK -->
+<section id="p-bulk" class="hide">
+  <label class="field">
+    <span class="lab">한 줄에 한 마리씩. 이름 공/방/체 (CP는 선택)</span>
+    <textarea class="tin" id="bulk" placeholder="아머까오 2 15 15&#10;823 0 10 15 220&#10;잉어킹 0/14/15 10"></textarea>
+  </label>
+  <div class="btnrow">
+    <button class="btn" id="bgo">전부 판정</button>
+    <button class="btn ghost" id="badd">결과를 보관함에 담기</button>
+  </div>
+  <div id="bout"></div>
+</section>
+
+<!-- BOX -->
+<section id="p-box" class="hide">
+  <div id="boxout"></div>
+  <div class="btnrow">
+    <button class="btn ghost" id="bxexp">보관함 내보내기</button>
+    <button class="btn ghost" id="bximp">불러오기</button>
+  </div>
+  <input type="file" id="bxfile" accept=".json" class="hide">
+</section>
+
+<!-- SETTINGS -->
+<section id="p-set" class="hide">
+  <div class="note" style="margin-top:18px">
+    판정 기준은 세 가지입니다. 리그 순위 안에 없으면 정리, 최적 개체값 대비 아래 수치에 못 미치면 정리,
+    다만 특전기를 습득한 개체는 예외로 유지합니다.
+  </div>
+  <label class="field">
+    <span class="lab">유지 기준 (최적 대비 %)</span>
+    <input class="tin" id="thr" inputmode="decimal" value="99">
+  </label>
+  <label class="field">
+    <span class="lab">메타 인정 순위 (이 순위 밖이면 정리)</span>
+    <input class="tin" id="metaN" inputmode="numeric" value="200">
+  </label>
+  <button class="btn" id="saveset">기준 저장</button>
+
+  <div class="note" style="margin-top:26px">
+    이름이 틀렸을 때 여기서 고칠 수 있습니다. 고친 내용은 이 기기에 저장되고,
+    내보내기로 뽑아두면 다른 기기나 친구에게 그대로 옮길 수 있습니다.
+  </div>
+  <div id="ovout"></div>
+  <div class="btnrow">
+    <button class="btn ghost" id="ovexp">이름 수정분 내보내기</button>
+    <button class="btn ghost" id="ovimp">불러오기</button>
+  </div>
+  <input type="file" id="ovfile" accept=".json" class="hide">
+</section>
+
+</main>
+
+<script>
+const KO_NAME = {"1":"이상해씨","2":"이상해풀","3":"이상해꽃","4":"파이리","5":"리자드","6":"리자몽","7":"꼬부기","8":"어니부기","9":"거북왕","10":"캐터피","11":"단데기","12":"버터플","13":"뿔충이","14":"딱충이","15":"독침붕","16":"구구","17":"피죤","18":"피죤투","19":"꼬렛","20":"레트라","21":"깨비참","22":"깨비드릴조","23":"아보","24":"아보크","25":"피카츄","26":"라이츄","27":"모래두지","28":"고지","29":"니드런♀","30":"니드리나","31":"니드퀸","32":"니드런♂","33":"니드리노","34":"니드킹","35":"삐삐","36":"픽시","37":"식스테일","38":"나인테일","39":"푸린","40":"푸크린","41":"주뱃","42":"골뱃","43":"뚜벅쵸","44":"냄새꼬","45":"라플레시아","46":"파라스","47":"파라섹트","48":"콘팡","49":"도나리","50":"디그다","51":"닥트리오","52":"나옹","53":"페르시온","54":"고라파덕","55":"골덕","56":"망키","57":"성원숭","58":"가디","59":"윈디","60":"발챙이","61":"슈륙챙이","62":"강챙이","63":"캐이시","64":"윤겔라","65":"후딘","66":"알통몬","67":"근육몬","68":"괴력몬","69":"모다피","70":"우츠동","71":"우츠보트","72":"왕눈해","73":"독파리","74":"꼬마돌","75":"데구리","76":"딱구리","77":"포니타","78":"날쌩마","79":"야돈","80":"야도란","81":"코일","82":"레어코일","83":"파오리","84":"두두","85":"두트리오","86":"쥬쥬","87":"쥬레곤","88":"질퍽이","89":"질뻐기","90":"셀러","91":"파르셀","92":"고오스","93":"고우스트","94":"팬텀","95":"롱스톤","96":"슬리프","97":"슬리퍼","98":"크랩","99":"킹크랩","100":"찌리리공","101":"붐볼","102":"아라리","103":"나시","104":"탕구리","105":"텅구리","106":"시라소몬","107":"홍수몬","108":"내루미","109":"또가스","110":"또도가스","111":"뿔카노","112":"코뿌리","113":"럭키","114":"덩쿠리","115":"캥카","116":"쏘드라","117":"시드라","118":"콘치","119":"왕콘치","120":"별가사리","121":"아쿠스타","122":"마임맨","123":"스라크","124":"루주라","125":"에레브","126":"마그마","127":"쁘사이저","128":"켄타로스","129":"잉어킹","130":"갸라도스","131":"라프라스","132":"메타몽","133":"이브이","134":"샤미드","135":"쥬피썬더","136":"부스터","137":"폴리곤","138":"암나이트","139":"암스타","140":"투구","141":"투구푸스","142":"프테라","143":"잠만보","144":"프리져","145":"썬더","146":"파이어","147":"미뇽","148":"신뇽","149":"망나뇽","150":"뮤츠","151":"뮤","152":"치코리타","153":"베이리프","154":"메가니움","155":"브케인","156":"마그케인","157":"블레이범","158":"리아코","159":"엘리게이","160":"장크로다일","161":"꼬리선","162":"다꼬리","163":"부우부","164":"야부엉","165":"레디바","166":"레디안","167":"페이검","168":"아리아도스","169":"크로뱃","170":"초라기","171":"랜턴","172":"피츄","173":"삐","174":"푸푸린","175":"토게피","176":"토게틱","177":"네이티","178":"네이티오","179":"메리프","180":"보송송","181":"전룡","182":"아르코","183":"마릴","184":"마릴리","185":"꼬지모","186":"왕구리","187":"통통코","188":"두코","189":"솜솜코","190":"에이팜","191":"해너츠","192":"해루미","193":"왕자리","194":"우파","195":"누오","196":"에브이","197":"블래키","198":"니로우","199":"야도킹","200":"무우마","201":"안농","202":"마자용","203":"키링키","204":"피콘","205":"쏘콘","206":"노고치","207":"글라이거","208":"강철톤","209":"블루","210":"그랑블루","211":"침바루","212":"핫삼","213":"단단지","214":"헤라크로스","215":"포푸니","216":"깜지곰","217":"링곰","218":"마그마그","219":"마그카르고","220":"꾸꾸리","221":"메꾸리","222":"코산호","223":"총어","224":"대포무노","225":"딜리버드","226":"만타인","227":"무장조","228":"델빌","229":"헬가","230":"킹드라","231":"코코리","232":"코리갑","233":"폴리곤2","234":"노라키","235":"루브도","236":"배루키","237":"카포에라","238":"뽀뽀라","239":"에레키드","240":"마그비","241":"밀탱크","242":"해피너스","243":"라이코","244":"앤테이","245":"스이쿤","246":"애버라스","247":"데기라스","248":"마기라스","249":"루기아","250":"칠색조","251":"세레비","252":"나무지기","253":"나무돌이","254":"나무킹","255":"아차모","256":"영치코","257":"번치코","258":"물짱이","259":"늪짱이","260":"대짱이","261":"포챠나","262":"그라에나","263":"지그제구리","264":"직구리","265":"개무소","266":"실쿤","267":"뷰티플라이","268":"카스쿤","269":"독케일","270":"연꽃몬","271":"로토스","272":"로파파","273":"도토링","274":"잎새코","275":"다탱구","276":"테일로","277":"스왈로","278":"갈모매","279":"패리퍼","280":"랄토스","281":"킬리아","282":"가디안","283":"비구술","284":"비나방","285":"버섯꼬","286":"버섯모","287":"게을로","288":"발바로","289":"게을킹","290":"토중몬","291":"아이스크","292":"껍질몬","293":"소곤룡","294":"노공룡","295":"폭음룡","296":"마크탕","297":"하리뭉","298":"루리리","299":"코코파스","300":"에나비","301":"델케티","302":"깜까미","303":"입치트","304":"가보리","305":"갱도라","306":"보스로라","307":"요가랑","308":"요가램","309":"썬더라이","310":"썬더볼트","311":"플러시","312":"마이농","313":"볼비트","314":"네오비트","315":"로젤리아","316":"꼴깍몬","317":"꿀꺽몬","318":"샤프니아","319":"샤크니아","320":"고래왕자","321":"고래왕","322":"둔타","323":"폭타","324":"코터스","325":"피그점프","326":"피그킹","327":"얼루기","328":"톱치","329":"비브라바","330":"플라이곤","331":"선인왕","332":"밤선인","333":"파비코","334":"파비코리","335":"쟝고","336":"세비퍼","337":"루나톤","338":"솔록","339":"미꾸리","340":"메깅","341":"가재군","342":"가재장군","343":"오뚝군","344":"점토도리","345":"릴링","346":"릴리요","347":"아노딥스","348":"아말도","349":"빈티나","350":"밀로틱","351":"캐스퐁","352":"켈리몬","353":"어둠대신","354":"다크펫","355":"해골몽","356":"미라몽","357":"트로피우스","358":"치렁","359":"앱솔","360":"마자","361":"눈꼬마","362":"얼음귀신","363":"대굴레오","364":"씨레오","365":"씨카이저","366":"진주몽","367":"헌테일","368":"분홍장이","369":"시라칸","370":"사랑동이","371":"아공이","372":"쉘곤","373":"보만다","374":"메탕","375":"메탕구","376":"메타그로스","377":"레지락","378":"레지아이스","379":"레지스틸","380":"라티아스","381":"라티오스","382":"가이오가","383":"그란돈","384":"레쿠쟈","385":"지라치","386":"테오키스","387":"모부기","388":"수풀부기","389":"토대부기","390":"불꽃숭이","391":"파이숭이","392":"초염몽","393":"팽도리","394":"팽태자","395":"엠페르트","396":"찌르꼬","397":"찌르버드","398":"찌르호크","399":"비버니","400":"비버통","401":"귀뚤뚜기","402":"귀뚤톡크","403":"꼬링크","404":"럭시오","405":"렌트라","406":"꼬몽울","407":"로즈레이드","408":"두개도스","409":"램펄드","410":"방패톱스","411":"바리톱스","412":"도롱충이","413":"도롱마담","414":"나메일","415":"세꿀버리","416":"비퀸","417":"파치리스","418":"브이젤","419":"플로젤","420":"체리버","421":"체리꼬","422":"깝질무","423":"트리토돈","424":"겟핸보숭","425":"흔들풍손","426":"둥실라이드","427":"이어롤","428":"이어롭","429":"무우마직","430":"돈크로우","431":"나옹마","432":"몬냥이","433":"랑딸랑","434":"스컹뿡","435":"스컹탱크","436":"동미러","437":"동탁군","438":"꼬지지","439":"흉내내","440":"핑복","441":"페라페","442":"화강돌","443":"딥상어동","444":"한바이트","445":"한카리아스","446":"먹고자","447":"리오르","448":"루카리오","449":"히포포타스","450":"하마돈","451":"스콜피","452":"드래피온","453":"삐딱구리","454":"독개굴","455":"무스틈니","456":"형광어","457":"네오라이트","458":"타만타","459":"눈쓰개","460":"눈설왕","461":"포푸니라","462":"자포코일","463":"내룸벨트","464":"거대코뿌리","465":"덩쿠림보","466":"에레키블","467":"마그마번","468":"토게키스","469":"메가자리","470":"리피아","471":"글레이시아","472":"글라이온","473":"맘모꾸리","474":"폴리곤Z","475":"엘레이드","476":"대코파스","477":"야느와르몽","478":"눈여아","479":"로토무","480":"유크시","481":"엠라이트","482":"아그놈","483":"디아루가","484":"펄기아","485":"히드런","486":"레지기가스","487":"기라티나","488":"크레세리아","489":"피오네","490":"마나피","491":"다크라이","492":"쉐이미","493":"아르세우스","494":"비크티니","495":"주리비얀","496":"샤비","497":"샤로다","498":"뚜꾸리","499":"차오꿀","500":"염무왕","501":"수댕이","502":"쌍검자비","503":"대검귀","504":"보르쥐","505":"보르그","506":"요테리","507":"하데리어","508":"바랜드","509":"쌔비냥","510":"레파르다스","511":"야나프","512":"야나키","513":"바오프","514":"바오키","515":"앗차프","516":"앗차키","517":"몽나","518":"몽얌나","519":"콩둘기","520":"유토브","521":"켄호로우","522":"줄뮤마","523":"제브라이카","524":"단굴","525":"암트르","526":"기가이어스","527":"또르박쥐","528":"맘박쥐","529":"두더류","530":"몰드류","531":"다부니","532":"으랏차","533":"토쇠골","534":"노보청","535":"동챙이","536":"두까비","537":"두빅굴","538":"던지미","539":"타격귀","540":"두르보","541":"두르쿤","542":"모아머","543":"마디네","544":"휠구","545":"펜드라","546":"소미안","547":"엘풍","548":"치릴리","549":"드레디어","550":"배쓰나이","551":"깜눈크","552":"악비르","553":"악비아르","554":"달막화","555":"불비달마","556":"마라카치","557":"돌살이","558":"암팰리스","559":"곤율랭","560":"곤율거니","561":"심보러","562":"데스마스","563":"데스니칸","564":"프로토가","565":"늑골라","566":"아켄","567":"아케오스","568":"깨봉이","569":"더스트나","570":"조로아","571":"조로아크","572":"치라미","573":"치라치노","574":"고디탱","575":"고디보미","576":"고디모아젤","577":"유니란","578":"듀란","579":"란쿨루스","580":"꼬지보리","581":"스완나","582":"바닐프티","583":"바닐리치","584":"배바닐라","585":"사철록","586":"바라철록","587":"에몽가","588":"딱정곤","589":"슈바르고","590":"깜놀버슬","591":"뽀록나","592":"탱그릴","593":"탱탱겔","594":"맘복치","595":"파쪼옥","596":"전툴라","597":"철시드","598":"너트령","599":"기어르","600":"기기어르","601":"기기기어르","602":"저리어","603":"저리릴","604":"저리더프","605":"리그레","606":"벰크","607":"불켜미","608":"램프라","609":"샹델라","610":"터검니","611":"액슨도","612":"액스라이즈","613":"코고미","614":"툰베어","615":"프리지오","616":"쪼마리","617":"어지리더","618":"메더","619":"비조푸","620":"비조도","621":"크리만","622":"골비람","623":"골루그","624":"자망칼","625":"절각참","626":"버프론","627":"수리둥보","628":"워글","629":"벌차이","630":"버랜지나","631":"앤티골","632":"아이앤트","633":"모노두","634":"디헤드","635":"삼삼드래","636":"활화르바","637":"불카모스","638":"코바르온","639":"테라키온","640":"비리디온","641":"토네로스","642":"볼트로스","643":"레시라무","644":"제크로무","645":"랜드로스","646":"큐레무","647":"케르디오","648":"메로엣타","649":"게노세크트","650":"도치마론","651":"도치보구","652":"브리가론","653":"푸호꼬","654":"테르나","655":"마폭시","656":"개구마르","657":"개굴반장","658":"개굴닌자","659":"파르빗","660":"파르토","661":"화살꼬빈","662":"불화살빈","663":"파이어로","664":"분이벌레","665":"분떠도리","666":"비비용","667":"레오꼬","668":"화염레오","669":"플라베베","670":"플라엣테","671":"플라제스","672":"메이클","673":"고고트","674":"판짱","675":"부란다","676":"트리미앙","677":"냐스퍼","678":"냐오닉스","679":"단칼빙","680":"쌍검킬","681":"킬가르도","682":"슈쁘","683":"프레프티르","684":"나룸퍼프","685":"나루림","686":"오케이징","687":"칼라마네로","688":"거북손손","689":"거북손데스","690":"수레기","691":"드래캄","692":"완철포","693":"블로스터","694":"목도리키텔","695":"일레도리자드","696":"티고라스","697":"견고라스","698":"아마루스","699":"아마루르가","700":"님피아","701":"루차불","702":"데덴네","703":"멜리시","704":"미끄메라","705":"미끄네일","706":"미끄래곤","707":"클레피","708":"나목령","709":"대로트","710":"호바귀","711":"펌킨인","712":"꽁어름","713":"크레베이스","714":"음뱃","715":"음번","716":"제르네아스","717":"이벨타르","718":"지가르데","719":"디안시","720":"후파","721":"볼케니온","722":"나몰빼미","723":"빼미스로우","724":"모크나이퍼","725":"냐오불","726":"냐오히트","727":"어흥염","728":"누리공","729":"키요공","730":"누리레느","731":"콕코구리","732":"크라파","733":"왕큰부리","734":"영구스","735":"형사구스","736":"턱지충이","737":"전지충이","738":"투구뿌논","739":"오기지게","740":"모단단게","741":"춤추새","742":"에블리","743":"에리본","744":"암멍이","745":"루가루암","746":"약어리","747":"시마사리","748":"더시마사리","749":"머드나기","750":"만마드","751":"물거미","752":"깨비물거미","753":"짜랑랑","754":"라란티스","755":"자마슈","756":"마셰이드","757":"야도뇽","758":"염뉴트","759":"포곰곰","760":"이븐곰","761":"달콤아","762":"달무리나","763":"달코퀸","764":"큐아링","765":"하랑우탄","766":"내던숭이","767":"꼬시레","768":"갑주무사","769":"모래꿍","770":"모래성이당","771":"해무기","772":"타입:널","773":"실버디","774":"메테노","775":"자말라","776":"폭거북스","777":"토게데마루","778":"따라큐","779":"치갈기","780":"할비롱","781":"타타륜","782":"짜랑꼬","783":"짜랑고우","784":"짜랑고우거","785":"카푸꼬꼬꼭","786":"카푸나비나","787":"카푸브루루","788":"카푸느지느","789":"코스모그","790":"코스모움","791":"솔가레오","792":"루나아라","793":"텅비드","794":"매시붕","795":"페로코체","796":"전수목","797":"철화구야","798":"종이신도","799":"악식킹","800":"네크로즈마","801":"마기아나","802":"마샤도","803":"베베놈","804":"아고용","805":"차곡차곡","806":"두파팡","807":"제라오라","808":"멜탄","809":"멜메탈","810":"흥나숭","811":"채키몽","812":"고릴타","813":"염버니","814":"래비풋","815":"에이스번","816":"울머기","817":"누겔레온","818":"인텔리레온","819":"탐리스","820":"요씽리스","821":"파라꼬","822":"파크로우","823":"아머까오","824":"두루지벌레","825":"레돔벌레","826":"이올브","827":"훔처우","828":"폭슬라이","829":"꼬모카","830":"백솜모카","831":"우르","832":"배우르","833":"깨물부기","834":"갈가부기","835":"멍파치","836":"펄스멍","837":"탄동","838":"탄차곤","839":"석탄산","840":"과사삭벌레","841":"애프룡","842":"단지래플","843":"모래뱀","844":"사다이사","845":"윽우지","846":"찌로꼬치","847":"꼬치조","848":"일레즌","849":"스트린더","850":"태우지네","851":"다태우지네","852":"때때무노","853":"케오퍼스","854":"데인차","855":"포트데스","856":"몸지브림","857":"손지브림","858":"브리무음","859":"메롱꿍","860":"쏘겨모","861":"오롱털","862":"가로막구리","863":"나이킹","864":"산호르곤","865":"창파나이트","866":"마임꽁꽁","867":"데스판","868":"마빌크","869":"마휘핑","870":"대여르","871":"찌르성게","872":"누니머기","873":"모스노우","874":"돌헨진","875":"빙큐보","876":"에써르","877":"모르페코","878":"끼리동","879":"대왕끼리동","880":"파치래곤","881":"파치르돈","882":"어래곤","883":"어치르돈","884":"두랄루돈","885":"드라꼰","886":"드래런치","887":"드래펄트","888":"자시안","889":"자마젠타","890":"무한다이노","891":"치고마","892":"우라오스","893":"자루도","894":"레지에레키","895":"레지드래고","896":"블리자포스","897":"레이스포스","898":"버드렉스","899":"신비록","900":"사마자르","901":"다투곰","902":"대쓰여너","903":"포푸니크","904":"장침바루","905":"러브로스","906":"나오하","907":"나로테","908":"마스카나","909":"뜨아거","910":"악뜨거","911":"라우드본","912":"꾸왁스","913":"아꾸왁","914":"웨이니발","915":"맛보돈","916":"퍼퓨돈","917":"타랜툴라","918":"트래피더","919":"콩알뚜기","920":"엑스레그","921":"빠모","922":"빠모트","923":"빠르모트","924":"두리쥐","925":"파밀리쥐","926":"쫀도기","927":"바우첼","928":"미니브","929":"올리뇨","930":"올리르바","931":"시비꼬","932":"베베솔트","933":"스태솔트","934":"콜로솔트","935":"카르본","936":"카디나르마","937":"파라블레이즈","938":"빈나두","939":"찌리배리","940":"찌리비","941":"찌리비크","942":"오라티프","943":"마피티프","944":"땃쭈르","945":"태깅구르","946":"그푸리","947":"공푸리","948":"들눈해","949":"육파리","950":"절벼게","951":"캡싸이","952":"스코빌런","953":"구르데","954":"베라카스","955":"하느라기","956":"클레스퍼트라","957":"어리짱","958":"벼리짱","959":"두드리짱","960":"바다그다","961":"바닥트리오","962":"떨구새","963":"맨돌핀","964":"돌핀맨","965":"부르롱","966":"부르르룸","967":"모토마","968":"꿈트렁","969":"초롱순","970":"킬라플로르","971":"망망이","972":"묘두기","973":"꼬이밍고","974":"터벅고래","975":"우락고래","976":"가비루사","977":"어써러셔","978":"싸리용","979":"저승갓숭","980":"토오","981":"키키링","982":"노고고치","983":"대도각참","984":"위대한엄니","985":"우렁찬꼬리","986":"사나운버섯","987":"날개치는머리","988":"땅을기는날개","989":"모래털가죽","990":"무쇠바퀴","991":"무쇠보따리","992":"무쇠손","993":"무쇠머리","994":"무쇠독나방","995":"무쇠가시","996":"드니차","997":"드니꽁","998":"드닐레이브","999":"모으령","1000":"타부자고","1001":"총지엔","1002":"파오젠","1003":"딩루","1004":"위유이","1005":"고동치는달","1006":"무쇠무인","1007":"코라이돈","1008":"미라이돈","1009":"굽이치는물결","1010":"무쇠잎새","1011":"과미르","1012":"차데스","1013":"그우린차","1014":"조타구","1015":"이야후","1016":"기로치","1017":"오거폰","1018":"브리두라스","1019":"과미드라","1020":"꿰뚫는화염","1021":"날뛰는우레","1022":"무쇠암석","1023":"무쇠감투","1024":"테라파고스","1025":"복숭악동"};
+const KO_MOVE = {"ACID":"용해액","ACID_SPRAY":"애시드봄","ACROBATICS":"애크러뱃","AERIAL_ACE":"제비반환","AEROBLAST":"에어로블라스트","AIR_CUTTER":"에어커터","AIR_SLASH":"에어슬래시","ANCIENT_POWER":"원시의힘","AQUA_JET":"아쿠아제트","AQUA_STEP":"아쿠아스텝","AQUA_TAIL":"아쿠아테일","ASTONISH":"놀래키기","AURA_SPHERE":"파동탄","AURORA_BEAM":"오로라빔","AVALANCHE":"눈사태","BEAK_BLAST":"부리캐논","BEHEMOTH_BASH":"거수탄","BEHEMOTH_BLADE":"거수참","BITE":"물기","BLAST_BURN":"블라스트번","BLAZE_KICK":"블레이즈킥","BLEAKWIND_STORM":"찬바람폭풍","BLIZZARD":"눈보라","BODY_SLAM":"누르기","BONE_CLUB":"뼈다귀치기","BOOMBURST":"폭음파","BRAVE_BIRD":"브레이브버드","BREAKING_SWIPE":"와이드브레이커","BRICK_BREAK":"깨뜨리다","BRINE":"소금물","BRUTAL_SWING":"세차게휘두르기","BUBBLE":"거품","BUBBLE_BEAM":"거품광선","BUG_BITE":"벌레먹기","BUG_BUZZ":"벌레의야단법석","BULLDOZE":"땅고르기","BULLET_PUNCH":"불릿펀치","BULLET_SEED":"씨기관총","CHARGE_BEAM":"차지빔","CHARM":"애교부리기","CHILLING_WATER":"찬물끼얹기","CLANGING_SCALES":"스케일노이즈","CLOSE_COMBAT":"인파이트","CONFUSION":"염동력","COUNTER":"카운터","CRABHAMMER":"집게해머","CROSS_CHOP":"크로스촙","CROSS_POISON":"크로스포이즌","CRUNCH":"깨물어부수기","CRUSH_GRIP":"묵사발","CUT":"풀베기","DARKEST_LARIAT":"DD래리어트","DARK_PULSE":"악의파동","DAZZLING_GLEAM":"매지컬샤인","DIG":"구멍파기","DISARMING_VOICE":"차밍보이스","DISCHARGE":"방전","DIVE":"다이빙","DOOM_DESIRE":"파멸의소원","DOUBLE_IRON_BASH":"더블펀처","DOUBLE_KICK":"두번차기","DRACO_METEOR":"용성군","DRAGON_ASCENT":"화룡점정","DRAGON_BREATH":"용의숨결","DRAGON_CLAW":"드래곤클로","DRAGON_ENERGY":"드래곤에너지","DRAGON_PULSE":"용의파동","DRAGON_TAIL":"드래곤테일","DRAINING_KISS":"드레인키스","DRAIN_PUNCH":"드레인펀치","DRILL_PECK":"회전부리","DRILL_RUN":"드릴라이너","DRUM_BEATING":"드럼어택","DYNAMAX_CANNON":"다이맥스포","DYNAMIC_PUNCH":"폭발펀치","EARTHQUAKE":"지진","EARTH_POWER":"대지의힘","EMBER":"불꽃세례","ENERGY_BALL":"에너지볼","EXTRASENSORY":"신통력","FAIRY_WIND":"요정의바람","FEATHER_DANCE":"깃털댄스","FEINT_ATTACK":"속여때리기","FELL_STINGER":"마지막일침","FIRE_BLAST":"불대문자","FIRE_FANG":"불꽃엄니","FIRE_PUNCH":"불꽃펀치","FIRE_SPIN":"회오리불꽃","FLAMETHROWER":"화염방사","FLAME_BURST":"불꽃튀기기","FLAME_CHARGE":"니트로차지","FLAME_WHEEL":"화염바퀴","FLASH_CANNON":"러스터캐논","FLOWER_TRICK":"트릭플라워","FLY":"공중날기","FLYING_PRESS":"플라잉프레스","FOCUS_BLAST":"기합구슬","FORCE_PALM":"발경","FOUL_PLAY":"속임수","FREEZE_SHOCK":"프리즈볼트","FRENZY_PLANT":"하드플랜트","FROST_BREATH":"얼음숨결","FRUSTRATION":"화풀이","FURY_CUTTER":"연속자르기","FUSION_BOLT":"크로스썬더","FUSION_FLARE":"크로스플레임","FUTURE_SIGHT":"미래예지","GEOMANCY":"지오컨트롤","GIGATON_HAMMER":"거대해머","GIGA_DRAIN":"기가드레인","GIGA_IMPACT":"기가임팩트","GLACIATE":"얼어붙은세계","GLAIVE_RUSH":"대검돌격","GRASS_KNOT":"풀묶기","GUNK_SHOT":"더스트슈트","GUST":"바람일으키기","GYRO_BALL":"자이로볼","HEART_STAMP":"하트스탬프","HEAT_WAVE":"열풍","HEAVY_SLAM":"헤비봄버","HEX":"병상첨병","HIGH_HORSEPOWER":"10만마력","HIGH_JUMP_KICK":"무릎차기","HORN_ATTACK":"뿔찌르기","HURRICANE":"폭풍","HYDRO_CANNON":"하이드로캐논","HYDRO_PUMP":"하이드로펌프","HYPER_BEAM":"파괴광선","HYPER_FANG":"필살앞니","ICE_BEAM":"냉동빔","ICE_BURN":"콜드플레어","ICE_FANG":"얼음엄니","ICE_PUNCH":"냉동펀치","ICE_SHARD":"얼음뭉치","ICICLE_SPEAR":"고드름침","ICY_WIND":"얼어붙은바람","INCINERATE":"불태우기","INFESTATION":"엉겨붙기","IRON_HEAD":"아이언헤드","IRON_TAIL":"아이언테일","KARATE_CHOP":"태권당수","LAST_RESORT":"비장의무기","LEAFAGE":"나뭇잎","LEAF_BLADE":"리프블레이드","LEAF_STORM":"리프스톰","LEAF_TORNADO":"그래스믹서","LICK":"핥기","LIQUIDATION":"아쿠아브레이크","LOCK_ON":"록온","LOW_KICK":"안다리걸기","LOW_SWEEP":"로킥","LUNGE":"덤벼들기","LUSTER_PURGE":"러스터퍼지","MAGICAL_LEAF":"매지컬리프","MAGMA_STORM":"마그마스톰","MAGNET_BOMB":"마그넷봄","MEGAHORN":"메가혼","MEGA_DRAIN":"메가드레인","METAL_CLAW":"메탈클로","METAL_SOUND":"금속음","METEOR_BEAM":"메테오빔","METEOR_MASH":"코멧펀치","MIND_BLOWN":"깜짝헤드","MIRROR_COAT":"미러코트","MIRROR_SHOT":"미러샷","MIST_BALL":"미스트볼","MOONBLAST":"문포스","MOONGEIST_BEAM":"섀도레이","MUDDY_WATER":"탁류","MUD_BOMB":"진흙폭탄","MUD_SHOT":"머드샷","MUD_SLAP":"진흙뿌리기","MYSTICAL_FIRE":"매지컬플레임","NATURES_MADNESS":"자연의분노","NIGHT_SHADE":"나이트헤드","NIGHT_SLASH":"깜짝베기","OBLIVION_WING":"데스윙","OBSTRUCT":"블로킹","OCTAZOOKA":"대포무노포","OMINOUS_WIND":"괴상한바람","ORIGIN_PULSE":"근원의파동","OUTRAGE":"역린","OVERHEAT":"오버히트","PARABOLIC_CHARGE":"파라볼라차지","PAYBACK":"보복","PECK":"쪼기","PETAL_BLIZZARD":"꽃보라","PLASMA_FISTS":"플라스마피스트","PLAY_ROUGH":"치근거리기","POISON_FANG":"맹독엄니","POISON_JAB":"독찌르기","POISON_STING":"독침","POLTERGEIST":"폴터가이스트","POUND":"막치기","POWDER_SNOW":"눈싸라기","POWER_GEM":"파워젬","POWER_UP_PUNCH":"그로우펀치","POWER_WHIP":"파워휩","PRECIPICE_BLADES":"단애의칼","PRESENT":"프레젠트","PSYBEAM":"환상빔","PSYCHIC":"사이코키네시스","PSYCHIC_FANGS":"사이코팽","PSYCHO_BOOST":"사이코부스트","PSYCHO_CUT":"사이코커터","PSYSHOCK":"사이코쇼크","PSYSTRIKE":"사이코브레이크","PSYWAVE":"사이코웨이브","PYRO_BALL":"화염볼","QUICK_ATTACK":"전광석화","RAGE_FIST":"분노의주먹","RAZOR_LEAF":"잎날가르기","RAZOR_SHELL":"셸블레이드","REST":"잠자기","RETURN":"은혜갚기","ROAR_OF_TIME":"시간의포효","ROCK_BLAST":"록블라스트","ROCK_SLIDE":"스톤샤워","ROCK_SMASH":"바위깨기","ROCK_THROW":"돌떨구기","ROCK_TOMB":"암석봉인","ROCK_WRECKER":"암석포","ROLLOUT":"구르기","SACRED_FIRE":"성스러운불꽃","SACRED_SWORD":"성스러운칼","SANDSEAR_STORM":"열사의폭풍","SAND_ATTACK":"모래뿌리기","SAND_TOMB":"모래지옥","SCALD":"열탕","SCORCHING_SANDS":"열사의대지","SCRATCH":"할퀴기","SECRET_SWORD":"신비의칼","SEED_BOMB":"씨폭탄","SEED_FLARE":"시드플레어","SHADOW_BALL":"섀도볼","SHADOW_BONE":"섀도본","SHADOW_CLAW":"섀도클로","SHADOW_FORCE":"섀도다이브","SHADOW_PUNCH":"섀도펀치","SHADOW_SNEAK":"야습","SIGNAL_BEAM":"시그널빔","SILVER_WIND":"은빛바람","SKULL_BASH":"로켓박치기","SKY_ATTACK":"불새","SLUDGE":"오물공격","SLUDGE_BOMB":"오물폭탄","SLUDGE_WAVE":"오물웨이브","SMACK_DOWN":"떨어뜨리기","SNARL":"바크아웃","SNIPE_SHOT":"노려맞히기","SOLAR_BEAM":"솔라빔","SPACIAL_REND":"공간절단","SPARK":"스파크","SPARKLING_ARIA":"물거품아리아","SPIRIT_SHACKLE":"그림자꿰매기","SPLASH":"튀어오르기","SPRINGTIDE_STORM":"봄의폭풍","STEEL_WING":"강철날개","STOMP":"짓밟기","STONE_EDGE":"스톤에지","STRUGGLE":"발버둥","STRUGGLE_BUG":"벌레의저항","SUBMISSION":"지옥의바퀴","SUCKER_PUNCH":"기습","SUNSTEEL_STRIKE":"메테오드라이브","SURF":"파도타기","SWIFT":"스피드스타","SYNCHRONOISE":"싱크로노이즈","TACKLE":"몸통박치기","TAKE_DOWN":"돌진","THUNDER":"번개","THUNDERBOLT":"10만볼트","THUNDER_CAGE":"썬더프리즌","THUNDER_FANG":"번개엄니","THUNDER_PUNCH":"번개펀치","THUNDER_SHOCK":"전기쇼크","TORCH_SONG":"플레어송","TRAILBLAZE":"개척하기","TRANSFORM":"변신","TRIPLE_AXEL":"트리플악셀","TRI_ATTACK":"트라이어택","TWISTER":"회오리","UPPER_HAND":"기선제압","VICE_GRIP":"찝기","VINE_WHIP":"덩굴채찍","VOLT_SWITCH":"볼트체인지","VOLT_TACKLE":"볼트태클","V_CREATE":"V제너레이트","WATERFALL":"폭포오르기","WATER_GUN":"물대포","WATER_PULSE":"물의파동","WATER_SHURIKEN":"물수리검","WILDBOLT_STORM":"번개폭풍","WILD_CHARGE":"와일드볼트","WING_ATTACK":"날개치기","WRAP":"김밥말이","X_SCISSOR":"시저크로스","YAWN":"하품","ZAP_CANNON":"전자포","ZEN_HEADBUTT":"사념의박치기"};
+
+/* 폼 이름.
+   대부분 PokeAPI pokemon_form_names.csv 의 한국어(language_id=3) 표기를 따랐습니다.
+   ※표는 공식 한국어 표기를 확인하지 못해 통용 표기를 쓴 것입니다.
+   같은 토큰이 포켓몬마다 뜻이 다르면 "도감번호|토큰" 키로 덮어씁니다. */
+const FORM_KO = {
+ // 지역폼·특수형태
+ "Alolan":"알로라","Galarian":"가라르","Hisuian":"히스이","Paldean":"팔데아",
+ "Shadow":"그림자","Mega":"메가","Mega X":"메가X","Mega Y":"메가Y","Primal":"원시",
+ "Armored":"아머드",                                   // ※포켓몬고 전용(아머드 뮤츠)
+ // 성별·크기
+ "Female":"암컷","Male":"수컷",
+ "Small":"작은","Average":"보통","Large":"큰","Super":"특대",
+ // 전설·환상
+ "Incarnate":"화신","Therian":"영물","Origin":"오리진","Altered":"어나더",
+ "Land":"랜드","Sky":"스카이","Attack":"어택","Defense":"디펜스","Speed":"스피드",
+ "Ultra":"울트라","Dusk Mane":"황혼의 갈기","Dawn Wings":"새벽의 날개",
+ "Crowned Sword":"검왕","Crowned Shield":"방패왕","Hero":"역전의 용사",
+ "Ice Rider":"백마 탄","Shadow Rider":"흑마 탄",
+ "Black":"블랙","White":"화이트","Eternamax":"무한다이맥스",
+ "10% Forme":"10%폼","50% Forme":"50%폼","Complete Forme":"퍼펙트폼",
+ "Confined":"굴레에 빠진","Unbound":"굴레를 벗어난",
+ "Aria":"보이스","Pirouette":"스텝","Ordinary":"평상시","Resolute":"각오",
+ // 모드·태세
+ "Standard":"노말모드","Zen":"달마모드","Galarian Zen":"가라르 달마모드",
+ "Blade":"블레이드","Shield":"실드","Busted":"들킨",
+ "Single Strike":"일격","Rapid Strike":"연격",
+ "Solo":"단독","School":"군집","Meteor":"유성","Core":"코어",
+ "Noice":"나이스페이스","Full Belly":"배부른","Hangry":"배고픈",
+ "Gulping":"그대로 삼킨","Gorging":"통째로 삼킨",
+ "Amped":"하이한","Low Key":"로우한",
+ "Midday":"한낮","Midnight":"한밤중","Dusk":"황혼",
+ // 도롱충이·체리버
+ "Plant":"초목도롱","Sandy":"모래땅도롱","Trash":"슈레도롱",
+ "Overcast":"네거폼","Sunshine":"포지폼",
+ // 캐스퐁
+ "Sunny":"태양","Rainy":"빗방울","Snowy":"설운",
+ // 춤추새
+ "Baile":"이글이글스타일","Pom-Pom":"파칙파칙스타일","Pa'u":"훌라훌라스타일","Sensu":"하늘하늘스타일",
+ // 로토무
+ "Heat":"히트","Wash":"워시","Frost":"프로스트","Fan":"스핀","Mow":"커트",
+ // 게노세크트 카세트
+ "Douse":"아쿠아카세트","Shock":"번개카세트","Burn":"블레이즈카세트","Chill":"프리즈카세트",
+ // 켄타로스(팔데아)·헤롱드래 — ※공식 한국어 표기 미확인
+ "Combat":"컴뱃","Blaze":"블레이즈","Aqua":"아쿠아",
+ "Curly":"컬리","Droopy":"드롭","Stretchy":"스트레치",
+ // 아르세우스·실버디 타입폼 (타입 이름을 그대로 씁니다)
+ "Normal":"노말","Fire":"불꽃","Water":"물","Electric":"전기","Grass":"풀","Ice":"얼음",
+ "Fighting":"격투","Poison":"독","Ground":"땅","Flying":"비행","Psychic":"에스퍼","Bug":"벌레",
+ "Rock":"바위","Ghost":"고스트","Dragon":"드래곤","Dark":"악","Steel":"강철","Fairy":"페어리",
+ // 같은 토큰이라도 이 포켓몬에서는 뜻이 다른 경우
+ "875|Ice":"아이스페이스",       // 빙큐보 — 타입폼이 아니라 아이스페이스
+ "25|Flying":"하늘을 나는"       // ※피카츄 코스튬
+};
+
+/* 괄호 안이지만 폼이 아니라 이름의 일부인 것 (타입:널, 흉내내) */
+const NOT_FORM = new Set(["Null","Jr"]);
+
+/* 포켓몬고 전용 코스튬 — 공식 한국어 표기를 확인하지 못해 원문 그대로 둡니다.
+   test.mjs 가 "매핑 안 된 폼"을 검사할 때 이 목록만 눈감아 줍니다. */
+const FORM_KEEP = new Set(["5th Anniversary","Horizons","Kariyushi","Libre","Pop Star","Rock Star","Shaymin Scarf"]);
+const TYPE_KO = {normal:"노말",fire:"불꽃",water:"물",electric:"전기",grass:"풀",ice:"얼음",
+ fighting:"격투",poison:"독",ground:"땅",flying:"비행",psychic:"에스퍼",bug:"벌레",
+ rock:"바위",ghost:"고스트",dragon:"드래곤",dark:"악",steel:"강철",fairy:"페어리"};
+const TYPE_C = {normal:"#9FA4AF",fire:"#FF8A50",water:"#5AA9F5",electric:"#F7D34C",grass:"#6FCB6F",
+ ice:"#7BDDE0",fighting:"#E0525F",poison:"#B57BE0",ground:"#DDA25C",flying:"#A5B8F0",
+ psychic:"#FF7BA8",bug:"#A8C544",rock:"#C7B27A",ghost:"#8E7BC7",dragon:"#7B72E8",
+ dark:"#7A6F7E",steel:"#9FB6C4",fairy:"#F5A0CE"};
+
+const CPM=[0.0939999967813491,0.135137430784308,0.166397869586944,0.192650914456886,0.215732470154762,0.236572655026622,0.255720049142837,0.273530381100769,0.290249884128570,0.306057381335773,0.321087598800659,0.335445032295077,0.349212676286697,0.362457748778790,0.375235587358474,0.387592411085168,0.399567276239395,0.411193549517250,0.422500014305114,0.432926413410414,0.443107545375824,0.453059953871985,0.462798386812210,0.472336077786704,0.481684952974319,0.490855810259008,0.499858438968658,0.508701756943992,0.517393946647644,0.525942508771329,0.534354329109191,0.542635762230353,0.550792694091796,0.558830599438087,0.566754519939422,0.574569148039264,0.582278907299041,0.589887911977272,0.597400009632110,0.604823657502073,0.612157285213470,0.619404110566050,0.626567125320434,0.633649181622743,0.640652954578399,0.647580963301656,0.654435634613037,0.661219263506722,0.667934000492096,0.674581899290818,0.681164920330047,0.687684905887771,0.694143652915954,0.700542893277978,0.706884205341339,0.713169102333341,0.719399094581604,0.725575616972598,0.731700003147125,0.734741011137376,0.737769484519958,0.740785574597326,0.743789434432983,0.746781208702482,0.749761044979095,0.752729105305821,0.755685508251190,0.758630366519684,0.761563837528228,0.764486065255226,0.767397165298461,0.770297273971590,0.773186504840850,0.776064945942412,0.778932750225067,0.781790064808426,0.784636974334716,0.787473583646825,0.790300011634826,0.792803950958807,0.795300006866455,0.797803921486970,0.800300002098083,0.802803892322847,0.805299997329711,0.807803863460723,0.810299992561340,0.812803834895026,0.815299987792968,0.817803806620319,0.820299983024597,0.822803778631297,0.825299978256225,0.827803750922782,0.830299973487854,0.832803753381377,0.835300028324127,0.837803755931569,0.840300023555755,0.842803729034748,0.845300018787384,0.847803702398935,0.850300014019012,0.852803676019539,0.855300009250640,0.857803649892077,0.860300004482269,0.862803624012168,0.865299999713897];
+const cpm=l=>CPM[Math.round((l-1)*2)];
+const MAXL=50;
+// XL 사탕: 레벨 구간별 0.5레벨당 소요
+const XL=[[40,42,10],[42,44,12],[44,46,15],[46,48,17],[48,50,20]];
+
+function calcCP(b,c,a,d,h){
+  return Math.max(10, Math.floor((b.atk+a)*Math.sqrt(b.def+d)*Math.sqrt(b.hp+h)*c*c/10));
+}
+function maxLevel(b,a,d,h,cap){
+  if(calcCP(b,cpm(1),a,d,h)>cap) return null;
+  let lo=0, hi=(MAXL-1)*2;              // 인덱스 = (레벨-1)*2
+  while(lo<hi){
+    const m=Math.ceil((lo+hi)/2);
+    if(calcCP(b,CPM[m],a,d,h)<=cap) lo=m; else hi=m-1;
+  }
+  return 1+lo/2;
+}
+function levelFromCP(b,a,d,h,cp){
+  const hit=[];
+  for(let l=1;l<=MAXL;l+=0.5) if(calcCP(b,cpm(l),a,d,h)===cp) hit.push(l);
+  if(!hit.length) return null;
+  return {lo:hit[0], hi:hit[hit.length-1], one:hit.length===1};
+}
+const lvTxt=c=>c.one?c.lo:(c.lo+'~'+c.hi);
+function xlNeeded(from,to){
+  if(to<=40) return 0;
+  let s=Math.max(from,40), n=0;
+  for(let l=s;l<to;l+=0.5){
+    const seg=XL.find(x=>l>=x[0]&&l<x[1]);
+    if(seg) n+=seg[2];
+  }
+  return n;
+}
+// 4096 전수 계산 → 순위표
+function rankAll(b,cap){
+  const out=[];
+  for(let h=15;h>=0;h--)for(let d=15;d>=0;d--)for(let a=15;a>=0;a--){
+    const l=maxLevel(b,a,d,h,cap); if(l===null) continue;
+    const c=cpm(l);
+    out.push({sp:(b.atk+a)*c*(b.def+d)*c*Math.floor((b.hp+h)*c),a,d,h,l,cp:calcCP(b,c,a,d,h)});
+  }
+  out.sort((x,y)=>y.sp-x.sp);
+  return out;
+}
+
+/* ---------- state ---------- */
+let GM=null, R15=null, R25=null, IDX=null;
+let OV = JSON.parse(localStorage.getItem('ivx_names')||'{}');
+let BOX = JSON.parse(localStorage.getItem('ivx_box')||'[]');
+let CFG = Object.assign({thr:99,metaN:200}, JSON.parse(localStorage.getItem('ivx_cfg')||'{}'));
+let curForms=[], curPick=0;
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function moveKo(id){
+  if(OV['mv:'+id]) return OV['mv:'+id];
+  if(KO_MOVE[id]) return KO_MOVE[id];
+  let m;
+  if(m=id.match(/^HIDDEN_POWER_(.+)$/)) return '히든파워('+(TYPE_KO[m[1].toLowerCase()]||m[1])+')';
+  if(m=id.match(/^WEATHER_BALL_(.+)$/)) return '웨더볼('+(TYPE_KO[m[1].toLowerCase()]||m[1])+')';
+  if(m=id.match(/^TECHNO_BLAST_(.+)$/)) return '테크노버스터';
+  if(m=id.match(/^AURA_WHEEL_(.+)$/)) return '오라휠('+(TYPE_KO[m[1].toLowerCase()]||m[1])+')';
+  if(m=id.match(/^(.+)_PLUS$/)) return (moveKo(m[1])||m[1])+'+';
+  if(id==='SUPER_POWER') return '엄청난힘';
+  if(m=id.match(/^(.+)_BLASTOISE$/)) return moveKo(m[1]);
+  if(m=id.match(/^GULP_MISSILE_(.+)$/)) return '미사일먹기';
+  if(m=id.match(/^AEGISLASH_CHARGE_(.+)$/)) return moveKo(m[1]);
+  return id.toLowerCase().replace(/_/g,' ');
+}
+function nameKo(p){
+  if(OV[p.speciesId]) return OV[p.speciesId];
+  const base = KO_NAME[p.dex] || p.speciesName;
+  const fm = p.speciesName.match(/\((.*?)\)/g);
+  if(!fm) return base;
+  const parts = fm.map(x=>x.slice(1,-1))
+    .filter(x=>!NOT_FORM.has(x))                       // 타입:널, 흉내내
+    .map(x=>FORM_KO[p.dex+'|'+x] || FORM_KO[x] || x);  // 도감번호별 예외 → 공통 → 원문
+  if(!parts.length) return base;
+  return parts.join(' ')+' '+base;
+}
+
+/* ---------- load ---------- */
+const RAW='https://raw.githubusercontent.com/pvpoke/pvpoke/master/src/data/';
+async function load(force){
+  try{
+    const opt = force ? {cache:'reload'} : undefined;
+    const [g,a,b]=await Promise.all([
+      fetch(RAW+'gamemaster.json',opt).then(r=>r.json()),
+      fetch(RAW+'rankings/all/overall/rankings-1500.json',opt).then(r=>r.json()),
+      fetch(RAW+'rankings/all/overall/rankings-2500.json',opt).then(r=>r.json())
+    ]);
+    GM=g; R15=new Map(); R25=new Map();
+    a.forEach((e,i)=>R15.set(e.speciesId,{r:i+1,mv:e.moveset,sc:e.score}));
+    b.forEach((e,i)=>R25.set(e.speciesId,{r:i+1,mv:e.moveset,sc:e.score}));
+    IDX=new Map(); GM.pokemon.forEach(p=>IDX.set(p.speciesId,p));
+    showStamp();
+    renderBox(); renderOv();
+  }catch(e){
+    $('#stat').textContent='데이터를 불러오지 못했습니다';
+    $('#err').className='err'; $('#err').textContent='pvpoke 데이터에 접근할 수 없습니다. 인터넷 연결을 확인하고 새로고침해 주세요.';
+  }
+}
+
+/* ---------- 데이터 기준일 ----------
+   pvpoke gamemaster.json 의 timestamp 가 자료 생성 시점입니다.
+   밸런스 패치가 지났는데 자료가 그 전이면 화면 위에 알립니다.
+   새 패치가 생기면 PATCHES 에 [날짜, 이름] 한 줄만 더하면 됩니다. */
+const PATCHES=[
+  ['2026-09-08','시즌 「황혼의 여정」 밸런스 패치']
+];
+function parseTS(s){
+  const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  return m ? new Date(+m[1],+m[2]-1,+m[3],+(m[4]||0),+(m[5]||0)) : null;
+}
+const fmtDay=d=>(d.getMonth()+1)+'월 '+d.getDate()+'일';
+function showStamp(){
+  const bar=$('#dbar'), ts=parseTS(GM&&GM.timestamp);
+  if(!ts){ $('#stat').textContent='pvpoke 기준 · '+GM.pokemon.length+'종'; bar.className='dbar'; return; }
+  const now=new Date(), days=Math.floor((now-ts)/86400000);
+  $('#stat').innerHTML='pvpoke <b>'+fmtDay(ts)+'</b> 자료'+(days>0?' · '+days+'일 전':'')+'<br>'+GM.pokemon.length+'종 · 슈퍼 '+R15.size+' · 하이퍼 '+R25.size;
+  // 이미 지난 패치 중 가장 최근 것
+  const due=PATCHES.map(p=>[parseTS(p[0]),p[1]]).filter(p=>p[0]&&p[0]<=now).sort((x,y)=>y[0]-x[0])[0];
+  if(due && ts<due[0]){
+    bar.innerHTML='<b>'+fmtDay(due[0])+' '+esc(due[1])+'</b>가 아직 반영되지 않았습니다. '+
+      '지금 보이는 순위와 정석 기술은 '+fmtDay(ts)+' 자료 기준입니다. '+
+      'pvpoke가 갱신되면 자동으로 바뀝니다.<button id="dre" type="button">다시 받기</button>';
+    bar.className='dbar on';
+  } else bar.className='dbar';
+}
+$('#dbar').addEventListener('click',e=>{
+  const b=e.target.closest('#dre'); if(!b) return;
+  b.disabled=true; b.textContent='받는 중…';
+  load(true);
+});
+
+/* ---------- search ---------- */
+function search(q){
+  if(!GM) return [];
+  q=q.trim(); if(!q) return [];
+  const num=parseInt(q,10);
+  let hits=[];
+  if(!isNaN(num) && String(num)===q.replace(/^0+/,'')){
+    hits=GM.pokemon.filter(p=>p.dex===num);
+  }else{
+    const lq=q.toLowerCase();
+    hits=GM.pokemon.filter(p=>{
+      const kn=nameKo(p);
+      const fam=KO_NAME[p.dex]||'';
+      return kn.includes(q)||fam.includes(q)||p.speciesName.toLowerCase().includes(lq)||p.speciesId.includes(lq);
+    });
+  }
+  hits.sort((x,y)=>{
+    const s=t=>(t.speciesId.includes('_shadow')?2:0)+(/mega/.test(t.speciesId)?1:0);
+    return s(x)-s(y);
+  });
+  return hits.slice(0,12);
+}
+
+/* ---------- evaluate ---------- */
+function chainOf(p){
+  const seen=new Set(), out=[];
+  (function walk(sp){
+    if(!sp||seen.has(sp.speciesId)) return;
+    seen.add(sp.speciesId); out.push(sp);
+    const ev=(sp.family&&sp.family.evolutions)||[];
+    ev.forEach(id=>walk(IDX.get(id)));
+  })(p);
+  return out;
+}
+function megaOf(p){
+  return ['_mega','_mega_x','_mega_y'].map(sf=>IDX.get(p.speciesId+sf)).filter(Boolean);
+}
+function evalStage(sp,a,d,h,cur){
+  const b=sp.baseStats, L=[];
+  [[1500,'슈퍼',R15],[2500,'하이퍼',R25]].forEach(([cap,label,RK])=>{
+    const rk=RK.get(sp.speciesId);
+    const all=rankAll(b,cap);
+    if(!all.length){ L.push({cap,label,rk,mine:null}); return; }
+    const top=all[0];
+    let mine=null,pos=0;
+    for(let i=0;i<all.length;i++){const r=all[i];if(r.a===a&&r.d===d&&r.h===h){mine=r;pos=i+1;break;}}
+    L.push({cap,label,rk,top,mine,pos,total:all.length,
+      pct: mine? mine.sp/top.sp*100:0,
+      over: !!(cur&&mine&&cur.lo>mine.l),
+      xl: mine? xlNeeded(cur?cur.lo:1,mine.l):0});
+  });
+  return {p:sp,leagues:L};
+}
+function evalMon(p,a,d,h,cp,legacy){
+  const cur = cp? levelFromCP(p.baseStats,a,d,h,cp) : null;
+  const stages = chainOf(p).map(sp=>evalStage(sp,a,d,h,cur));
+  const megas = megaOf(p).map(sp=>evalStage(sp,a,d,h,cur));
+  const o={p,a,d,h,cp,cur,legacy,stages,megas};
+  // 메타 순위 안에 들면서 실제로 넣을 수 있는 자리만 후보로 삼는다
+  let best=null;
+  stages.forEach(st=>st.leagues.forEach(L=>{
+    if(!L.mine||L.over) return;
+    if(!L.rk||L.rk.r>CFG.metaN) return;
+    if(!best||L.pct>best.L.pct) best={st,L};
+  }));
+  o.best=best;
+  if(legacy) o.verdict=['hold','특전기 습득 개체 — 기준과 무관하게 유지'];
+  else if(!best) o.verdict=['cull','메타 '+CFG.metaN+'위 안에 드는 자리가 없음'];
+  else if(best.L.pct<CFG.thr)
+    o.verdict=['cull',nameKo(best.st.p)+' '+best.L.label+' '+best.L.pct.toFixed(1)+'% — 기준('+CFG.thr+'%) 미달'];
+  else o.verdict=['keep', nameKo(best.st.p)+' '+best.L.label+'리그로 유지'];
+  return o;
+}
+
+/* ---------- render ---------- */
+function stageBlock(st,o,isMega){
+  const p=st.p, tc=TYPE_C[p.types[0]]||'#6C8CD5';
+  const el=new Set(p.eliteMoves||[]);
+  const mv=m=>el.has(m)?'<span class="el">'+esc(moveKo(m))+'*</span>':esc(moveKo(m));
+  let H='<div class="stage" style="--tc:'+tc+'">';
+  H+='<div class="sthead"><b>'+esc(nameKo(p))+'</b>'+
+     (isMega?'<span class="sub">메가</span>':'')+
+     '<span class="types">'+p.types.filter(t=>t!=='none').map(t=>
+       '<span class="ty" style="background:'+TYPE_C[t]+'">'+TYPE_KO[t]+'</span>').join('')+'</span></div>';
+  st.leagues.forEach(L=>{
+    H+='<div class="lgrow">';
+    H+='<div class="lgname">'+L.label+'</div>';
+    if(!L.mine){ H+='<div class="lgna">CP 상한 미달</div></div>'; return; }
+    H+='<div class="lgmain">';
+    H+='<div class="lgtop">'+
+       (L.rk?'<span class="lrank">리그 '+L.rk.r+'위</span>'
+            :'<span class="lrank dim">순위권 밖</span>')+
+       '<span class="mrank"><b>'+L.pos+'</b>위 · '+L.pct.toFixed(1)+'%</span></div>';
+    H+='<div class="bar"><div style="width:'+Math.max(0,Math.min(100,(L.pct-90)*10)).toFixed(1)+'%"></div></div>';
+    H+='<div class="ivline now"><span class="tagl">현재</span>'+
+       '<b>'+o.a+'/'+o.d+'/'+o.h+'</b>'+
+       '<span>Lv <b>'+L.mine.l+'</b></span>'+
+       '<span>CP <b>'+L.mine.cp+'</b></span>'+
+       (L.xl?'<span>XL <b>'+L.xl+'</b></span>':'')+'</div>';
+    H+='<div class="ivline best"><span class="tagl">최적</span>'+
+       '<b>'+L.top.a+'/'+L.top.d+'/'+L.top.h+'</b>'+
+       '<span>Lv <b>'+L.top.l+'</b></span>'+
+       '<span>CP <b>'+L.top.cp+'</b></span></div>';
+    if(L.over) H+='<div class="warn">현재 레벨('+lvTxt(o.cur)+')이 목표를 넘어 이 리그 진입 불가</div>';
+    if(L.rk) H+='<div class="mv"><span class="fast">'+mv(L.rk.mv[0])+'</span> / '+mv(L.rk.mv[1])+' + '+mv(L.rk.mv[2])+'</div>';
+    H+='</div></div>';
+  });
+  if(el.size) H+='<div class="elite">대기머: '+[...el].map(m=>esc(moveKo(m))).join(', ')+'</div>';
+  return H+'</div>';
+}
+
+function renderOne(o){
+  const p=o.p, tc=TYPE_C[p.types[0]]||'#6C8CD5';
+  let H='<div class="hdr" style="--tc:'+tc+'">';
+  H+='<div class="nm"><b>'+esc(nameKo(p))+'</b><span class="dex">#'+p.dex+'</span>'+
+     '<span class="dex">'+o.a+'/'+o.d+'/'+o.h+'</span>'+
+     '<button class="edit" data-edit="'+esc(p.speciesId)+'">이름 고치기</button></div></div>';
+
+  H+='<div class="verdict v-'+o.verdict[0]+'"><b>'+
+     ({keep:'유지',cull:'정리',hold:'보류'}[o.verdict[0]])+'</b><span>'+esc(o.verdict[1])+'</span></div>';
+
+  if(o.cur)
+    H+='<div class="note">CP '+o.cp+' → 현재 레벨 <b style="color:var(--fg)">'+lvTxt(o.cur)+'</b>'+
+       (o.cur.one?'':' (여러 레벨에서 나올 수 있는 CP입니다)')+'</div>';
+  else if(o.cp) H+='<div class="note">CP '+o.cp+'는 이 개체값으로 나올 수 없습니다. 값을 다시 확인해 주세요.</div>';
+
+  if(o.stages.length>1) H+='<div class="note">진화 계통 '+o.stages.length+'단계를 모두 계산했습니다. 개체값은 진화해도 그대로입니다.</div>';
+
+  o.stages.forEach(st=>H+=stageBlock(st,o,false));
+  if(o.megas.length){
+    H+='<div class="note" style="margin-top:18px">메가진화 (이번 시즌부터 배틀리그 참가 가능)</div>';
+    o.megas.forEach(st=>H+=stageBlock(st,o,true));
+  }
+  return H;
+}
+
+function verdictTag(v){return '<span class="tag t-'+v[0]+'">'+({keep:'유지',cull:'정리',hold:'보류'}[v[0]])+'</span>';}
+
+function renderTable(rows,withDel){
+  if(!rows.length) return '<div class="empty">아직 담긴 개체가 없습니다.</div>';
+  let H='<table><thead><tr><th>입력</th><th>개체값</th><th>가장 좋은 자리</th><th>판정</th>'+(withDel?'<th></th>':'')+'</tr></thead><tbody>';
+  rows.forEach((o,i)=>{
+    const b=o.best;
+    const cell = b? esc(nameKo(b.st.p))+' '+b.L.label+
+                    '<br><b>리그 '+b.L.rk.r+'위</b>'+
+                    ' <span style="color:var(--mut)">· 개체 '+b.L.pos+'위 '+b.L.pct.toFixed(1)+'%</span>'
+                  : '<span style="color:var(--dim)">해당 없음</span>';
+    H+='<tr><td>'+esc(nameKo(o.p))+'</td><td class="n">'+o.a+'/'+o.d+'/'+o.h+'</td>'+
+       '<td class="n">'+cell+'</td>'+
+       '<td>'+verdictTag(o.verdict)+'</td>'+
+       (withDel?'<td><button class="rowbtn" data-del="'+i+'">×</button></td>':'')+'</tr>';
+  });
+  return H+'</tbody></table>';
+}
+
+/* ---------- one ---------- */
+function pickForms(){
+  const hits=search($('#q').value);
+  curForms=hits; curPick=0;
+  const f=$('#forms');
+  if(hits.length<=1){ f.className='forms hide'; f.innerHTML=''; return; }
+  f.className='forms';
+  f.innerHTML=hits.map((p,i)=>'<button class="fchip" aria-pressed="'+(i===0)+'" data-f="'+i+'">'+esc(nameKo(p))+'</button>').join('');
+}
+$('#q').addEventListener('input',pickForms);
+$('#forms').addEventListener('click',e=>{
+  const b=e.target.closest('[data-f]'); if(!b) return;
+  curPick=+b.dataset.f;
+  [...$('#forms').children].forEach((c,i)=>c.setAttribute('aria-pressed',i===curPick));
+  runOne();
+});
+function runOne(){
+  const err=$('#err'); err.className='err hide';
+  if(!GM){ return; }
+  if(!curForms.length) curForms=search($('#q').value);
+  const p=curForms[curPick];
+  if(!p){ err.className='err'; err.textContent='그런 포켓몬을 찾지 못했습니다. 도감번호나 다른 이름으로 시도해 보세요.'; $('#res').innerHTML=''; return; }
+  const a=+$('#ia').value, d=+$('#id_').value, h=+$('#ih').value;
+  if([a,d,h].some(v=>isNaN(v)||v<0||v>15)){ err.className='err'; err.textContent='개체값은 0부터 15 사이 숫자로 넣어 주세요.'; return; }
+  const cp=$('#icp').value?+$('#icp').value:null;
+  const o=evalMon(p,a,d,h,cp,$('#legacy').checked);
+  $('#res').innerHTML=renderOne(o)+'<button class="btn ghost" id="addbox">보관함에 담기</button>';
+  $('#addbox').onclick=()=>{ BOX.push({id:p.speciesId,a,d,h,cp,legacy:o.legacy}); saveBox(); alert('담았습니다.'); };
+}
+$('#go').onclick=runOne;
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){pickForms();runOne();}});
+['ia','id_','ih','icp'].forEach(id=>$('#'+id).addEventListener('keydown',e=>{if(e.key==='Enter')runOne();}));
+
+$('#res').addEventListener('click',e=>{
+  const b=e.target.closest('[data-edit]'); if(!b) return;
+  const sid=b.dataset.edit, p=IDX.get(sid);
+  const v=prompt('이 포켓몬의 이름', nameKo(p));
+  if(v===null) return;
+  if(v.trim()==='') delete OV[sid]; else OV[sid]=v.trim();
+  localStorage.setItem('ivx_names',JSON.stringify(OV)); renderOv(); runOne();
+});
+
+/* ---------- bulk ---------- */
+function parseLine(s){
+  s=s.trim(); if(!s) return null;
+  const m=s.match(/^(.+?)\s+(\d{1,2})\s*[\/\s]\s*(\d{1,2})\s*[\/\s]\s*(\d{1,2})(?:\s+(\d{2,5}))?$/);
+  if(!m) return {bad:s};
+  const hits=search(m[1]);
+  if(!hits.length) return {bad:s};
+  return {p:hits[0],a:+m[2],d:+m[3],h:+m[4],cp:m[5]?+m[5]:null};
+}
+let bulkRows=[];
+$('#bgo').onclick=()=>{
+  if(!GM) return;
+  const lines=$('#bulk').value.split('\n');
+  const rows=[],bad=[];
+  lines.forEach(l=>{ const r=parseLine(l); if(!r) return;
+    if(r.bad){bad.push(r.bad);return;}
+    rows.push(evalMon(r.p,r.a,r.d,r.h,r.cp,false));
+  });
+  bulkRows=rows;
+  let H=renderTable(rows,false);
+  if(bad.length) H+='<div class="err">읽지 못한 줄: '+bad.map(esc).join(' · ')+'</div>';
+  $('#bout').innerHTML=H;
+};
+$('#badd').onclick=()=>{
+  if(!bulkRows.length){ alert('먼저 판정을 실행해 주세요.'); return; }
+  bulkRows.forEach(o=>BOX.push({id:o.p.speciesId,a:o.a,d:o.d,h:o.h,cp:o.cp,legacy:false}));
+  saveBox(); alert(bulkRows.length+'마리를 담았습니다.');
+};
+
+/* ---------- box ---------- */
+function saveBox(){ localStorage.setItem('ivx_box',JSON.stringify(BOX)); renderBox(); }
+function renderBox(){
+  if(!GM) return;
+  const rows=BOX.map(x=>{ const p=IDX.get(x.id); return p?evalMon(p,x.a,x.d,x.h,x.cp,x.legacy):null; }).filter(Boolean);
+  const n={keep:0,cull:0,hold:0}; rows.forEach(o=>n[o.verdict[0]]++);
+  $('#boxout').innerHTML =
+    (rows.length?'<div class="note" style="margin-top:18px">유지 '+n.keep+' · 보류 '+n.hold+' · 정리 '+n.cull+'</div>':'')
+    + renderTable(rows,true);
+}
+$('#boxout').addEventListener('click',e=>{
+  const b=e.target.closest('[data-del]'); if(!b) return;
+  BOX.splice(+b.dataset.del,1); saveBox();
+});
+function dl(name,obj){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));
+  a.download=name; a.click();
+}
+$('#bxexp').onclick=()=>dl('내보관함.json',BOX);
+$('#bximp').onclick=()=>$('#bxfile').click();
+$('#bxfile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  f.text().then(t=>{ try{ BOX=JSON.parse(t); saveBox(); alert('불러왔습니다.'); }catch(_){ alert('파일을 읽지 못했습니다.'); } });
+};
+
+/* ---------- settings ---------- */
+$('#thr').value=CFG.thr; $('#metaN').value=CFG.metaN;
+$('#saveset').onclick=()=>{
+  CFG={thr:parseFloat($('#thr').value)||99,metaN:parseInt($('#metaN').value)||200};
+  localStorage.setItem('ivx_cfg',JSON.stringify(CFG)); renderBox(); alert('저장했습니다.');
+};
+function renderOv(){
+  const ks=Object.keys(OV);
+  $('#ovout').innerHTML = ks.length
+    ? '<table><thead><tr><th>대상</th><th>고친 이름</th><th></th></tr></thead><tbody>'+
+      ks.map(k=>'<tr><td>'+esc(k)+'</td><td>'+esc(OV[k])+'</td><td><button class="rowbtn" data-ov="'+esc(k)+'">×</button></td></tr>').join('')+
+      '</tbody></table>'
+    : '<div class="empty">고친 이름이 아직 없습니다. 판정 화면에서 이름 옆 “이름 고치기”를 누르면 여기에 쌓입니다.</div>';
+}
+$('#ovout').addEventListener('click',e=>{
+  const b=e.target.closest('[data-ov]'); if(!b) return;
+  delete OV[b.dataset.ov]; localStorage.setItem('ivx_names',JSON.stringify(OV)); renderOv();
+});
+$('#ovexp').onclick=()=>dl('이름수정.json',OV);
+$('#ovimp').onclick=()=>$('#ovfile').click();
+$('#ovfile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  f.text().then(t=>{ try{ Object.assign(OV,JSON.parse(t)); localStorage.setItem('ivx_names',JSON.stringify(OV)); renderOv(); alert('불러왔습니다.'); }catch(_){ alert('파일을 읽지 못했습니다.'); } });
+};
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));
+  ['one','bulk','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
+  if(t.dataset.t==='box') renderBox();
+});
+
+load();
+</script>
+</body>
+</html>
