@@ -59,7 +59,8 @@ h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
 .ralt{padding-top:2px;border-top:0;opacity:.65;padding-left:8px}
 .ralt .rmv{font-size:12px}
 .tab{
-  flex:1;padding:7px 4px;font-size:13px;text-align:center;cursor:pointer;
+  flex:1 1 0;min-width:0;padding:7px 2px;font-size:12.5px;text-align:center;cursor:pointer;
+  white-space:nowrap;
   background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);
   font-family:inherit;
 }
@@ -98,6 +99,7 @@ textarea.tin{min-height:120px;resize:vertical;font-size:14px;line-height:1.7}
 
 /* form picker */
 .forms{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chipgap{flex-basis:100%;height:0}
 .fchip{
   padding:6px 11px;border-radius:99px;font-size:13px;cursor:pointer;
   background:var(--panel);border:1px solid var(--line);color:var(--mut);
@@ -218,6 +220,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
       <button class="tab" role="tab" aria-selected="true" data-t="one">한 마리</button>
       <button class="tab" role="tab" aria-selected="false" data-t="bulk">여러 마리</button>
       <button class="tab" role="tab" aria-selected="false" data-t="raid">레이드</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="rank">순위</button>
       <button class="tab" role="tab" aria-selected="false" data-t="box">보관함</button>
       <button class="tab" role="tab" aria-selected="false" data-t="set">설정</button>
     </div>
@@ -282,9 +285,16 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
   <div id="rerr" class="err hide"></div>
   <div id="rout"></div>
 
-  <div class="note" style="margin-top:26px">타입을 고르면 그 타입 공격수 순위를 봅니다. 라인업의 빈자리를 찾을 때 씁니다.</div>
-  <div id="rtypes" class="forms"></div>
-  <div id="rtout"></div>
+</section>
+
+<!-- RANK -->
+<section id="p-rank" class="hide">
+  <div class="note" style="margin-top:18px">
+    받아 둔 순위표를 그대로 훑어봅니다. 리그는 pvpoke 순위, 타입은 레이드 공격수 순위입니다.
+    라인업의 빈자리를 찾거나 메타가 어떻게 생겼는지 볼 때 씁니다.
+  </div>
+  <div id="rkchips" class="forms"></div>
+  <div id="rkout"></div>
 </section>
 
 <section id="p-box" class="hide">
@@ -560,8 +570,8 @@ function showStamp(){
   const bar=$('#dbar'), now=new Date();
   // 자료가 두 갈래입니다. PvP 순위는 pvpoke, 레이드 수치는 pve.json.
   const srcs=[
-    {n:'pvpoke',   ts:parseTS(GM&&GM.timestamp),  what:'리그 순위와 정석 기술'},
-    {n:'레이드',    ts:parseTS(PVE&&PVE.built),    what:'레이드 순위와 기술 수치'},
+    {n:'pvpoke',   ts:parseTS(GM&&GM.timestamp),  what:'리그 순위와 정석 기술은'},
+    {n:'레이드',    ts:parseTS(PVE&&PVE.built),    what:'레이드 순위와 기술 수치는'},
   ].filter(x=>x.ts);
   if(!srcs.length){ $('#stat').textContent='pvpoke 기준 · '+GM.pokemon.length+'종'; bar.className='dbar'; return; }
 
@@ -573,7 +583,7 @@ function showStamp(){
   const late = due ? srcs.filter(x=>x.ts<due[0]) : [];
   if(late.length){
     bar.innerHTML='<b>'+fmtDay(due[0])+' '+esc(due[1])+'</b>가 아직 반영되지 않았습니다. '+
-      late.map(x=>x.what+'은 '+fmtDay(x.ts)+' 자료입니다').join(', ')+'. '+
+      late.map(x=>x.what+' '+fmtDay(x.ts)).join(', ')+' 자료입니다. '+
       '갱신되면 자동으로 바뀝니다.<button id="dre" type="button">다시 받기</button>';
     bar.className='dbar on';
   } else bar.className='dbar';
@@ -1048,20 +1058,52 @@ function showMegaLv(){
 }
 function renderRaidTypes(){
   showMegaLv();
-  if(!PVE||!RANK) return;
-  $('#rtypes').innerHTML = PVE.types.map(t=>
-    '<button class="fchip" data-rt="'+t+'" style="border-color:'+(TYPE_C[t]||'#6C8CD5')+'55">'+esc(TYPE_KO[t]||t)+'</button>').join('');
+  if(!GM) return;
+  const chips=[['L1500','슈퍼리그','#6C8CD5'],['L2500','하이퍼리그','#6C8CD5']]
+    .concat((PVE?PVE.types:[]).map(t=>['T'+t,TYPE_KO[t]||t,TYPE_C[t]||'#6C8CD5']));
+  $('#rkchips').innerHTML = chips.map(([k,label,c],i)=>
+    (i===2?'<span class="chipgap"></span>':'')+
+    '<button class="fchip" data-rk="'+k+'" style="border-color:'+c+'55">'+esc(label)+'</button>').join('');
 }
-let rtOpen=null;
-$('#rtypes').addEventListener('click',e=>{
-  const b=e.target.closest('[data-rt]'); if(!b||!RANK) return;
-  const t=b.dataset.rt;
-  rtOpen = (rtOpen===t)?null:t;
-  [...$('#rtypes').children].forEach(c=>c.setAttribute('aria-pressed',c.dataset.rt===rtOpen));
-  $('#rtout').innerHTML = rtOpen
-    ? '<div class="note">'+esc(TYPE_KO[rtOpen])+' 공격수 상위 30. DPS·TDO 는 이 타입 1위를 100으로 놓은 상대값입니다. 기술 뒤의 * 는 그 기술을 따로 확보해야 한다는 뜻입니다.</div>'+
-      RANK[rtOpen].slice(0,30).map((e,i)=>raidRow(Object.assign({},e,{type:rtOpen,rank:i+1}),true,false)).join('')
-    : '';
+
+/* 리그(PvP) 순위 한 줄 */
+function leagueRow(sid,e,rank){
+  const p=IDX.get(sid);
+  const tc=p?(TYPE_C[p.types[0]]||'#6C8CD5'):'#6C8CD5';
+  const mv=(e.mv||[]).map(m=>esc(moveKo(m)));
+  return '<div class="rrow" style="--tc:'+tc+'">'+
+    '<b class="rrank">'+rank+'위</b>'+
+    '<span class="rname">'+esc(p?nameKo(p):sid)+'</span>'+
+    '<span class="rmv">'+(mv.length?mv[0]+' / '+mv.slice(1).join(' · '):'')+'</span>'+
+    '<span class="rnum">'+(e.sc!=null?e.sc:'')+'</span></div>';
+}
+
+const RANK_N=100;
+let rkOpen=null;
+function renderRank(){
+  const out=$('#rkout');
+  [...$('#rkchips').querySelectorAll('[data-rk]')].forEach(c=>c.setAttribute('aria-pressed',c.dataset.rk===rkOpen));
+  if(!rkOpen){ out.innerHTML=''; return; }
+  if(rkOpen[0]==='L'){
+    const cap=+rkOpen.slice(1);
+    const RK = cap===1500?R15:R25;
+    const rows=[...RK.entries()].sort((a,b)=>a[1].r-b[1].r).slice(0,RANK_N);
+    out.innerHTML='<div class="note">'+(cap===1500?'슈퍼':'하이퍼')+'리그 상위 '+rows.length+
+      ' (전체 '+RK.size+'). pvpoke 순위이고, 기술은 그 순위를 낸 정석 배치입니다. 오른쪽 숫자는 pvpoke 점수입니다.</div>'+
+      rows.map(([sid,e])=>leagueRow(sid,e,e.r)).join('');
+  }else{
+    const t=rkOpen.slice(1);
+    if(!RANK||!RANK[t]){ out.innerHTML='<div class="empty">레이드 자료를 불러오지 못했습니다.</div>'; return; }
+    out.innerHTML='<div class="note">'+esc(TYPE_KO[t]||t)+' 공격수 상위 '+Math.min(RANK_N,RANK[t].length)+
+      ' (전체 '+RANK[t].length+'). DPS·TDO 는 이 타입 1위를 100으로 놓은 상대값입니다. '+
+      '기술 뒤의 * 는 그 기술을 따로 확보해야 한다는 뜻입니다.</div>'+
+      RANK[t].slice(0,RANK_N).map((e,i)=>raidRow(Object.assign({},e,{type:t,rank:i+1}),true,false)).join('');
+  }
+}
+$('#rkchips').addEventListener('click',e=>{
+  const b=e.target.closest('[data-rk]'); if(!b||!GM) return;
+  rkOpen = (rkOpen===b.dataset.rk)?null:b.dataset.rk;
+  renderRank();
 });
 
 function runRaid(){
@@ -1108,7 +1150,7 @@ $('#saveset').onclick=()=>{
        megaLv:Math.min(4,Math.max(1,parseInt($('#megaLv').value)||4))};
   if(PVE&&RANK) buildRanks();          // 배율이 바뀌면 순위를 다시 만든다
   localStorage.setItem('ivx_cfg',JSON.stringify(CFG));
-  showMegaLv(); renderBox(); rtOpen=null; $('#rtout').innerHTML=''; $('#rout').innerHTML='';
+  showMegaLv(); renderBox(); renderRank(); $('#rout').innerHTML='';
   alert('저장했습니다.');
 };
 function renderOv(){
@@ -1133,7 +1175,7 @@ $('#ovfile').onchange=e=>{
 /* ---------- tabs ---------- */
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));
-  ['one','bulk','raid','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
+  ['one','bulk','raid','rank','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
   if(t.dataset.t==='box') renderBox();
 });
 

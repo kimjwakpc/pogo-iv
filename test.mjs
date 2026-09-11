@@ -143,7 +143,8 @@ async function boot() {
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
   chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
   setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf, raidForms, renderRaidMon,
-  MEGA_PLUS, megaPlusMult, showMegaLv,
+  MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow,
+  get rkOpen(){return rkOpen}, set rkOpen(v){rkOpen=v},
   get PVE(){return PVE}, get RANK(){return RANK},
   get GM(){return GM}, get IDX(){return IDX}, get R15(){return R15}, get R25(){return R25},
   get CFG(){return CFG}
@@ -235,12 +236,15 @@ async function main() {
     const only = (d, label) => { T.PATCHES.length = 0; T.PATCHES.push([ymd(d), label]); T.showStamp(); };
 
     // 자료보다 나중에 지나간 패치 → 알림이 켜져야 한다
-    only(new Date(ts.getTime() + 86400000), '테스트 패치');
+    // 두 자료(pvpoke · 레이드) 중 오래된 쪽을 기준으로 삼아야 한다
+    const pveTs = T.parseTS(T.PVE.built);
+    const oldest = ts < pveTs ? ts : pveTs;
+    only(new Date(oldest.getTime() + 86400000), '테스트 패치');
     check('자료보다 늦은 지난 패치 → 알림 켜짐', T.$('#dbar').className, 'dbar on');
     check('알림에 패치 이름 표기', T.$('#dbar').innerHTML.includes('테스트 패치'), true);
 
     // 자료보다 먼저 지나간 패치 → 이미 반영된 것이므로 조용해야 한다
-    only(new Date(ts.getTime() - 86400000), '오래된 패치');
+    only(new Date(oldest.getTime() - 86400000), '오래된 패치');
     check('자료에 이미 반영된 패치 → 알림 꺼짐', T.$('#dbar').className, 'dbar');
 
     // 아직 오지 않은 패치 → 알리지 않는다
@@ -526,6 +530,33 @@ async function main() {
     const r4 = T.RANK.psychic.findIndex(e => e.p.speciesId === 'malamar_mega' && !e.sh) + 1;
     check('메가 칼라마네로 레벨1 순위가 더 낮음', r1 > r4, true);
   }
+
+  // 순위 탭 — 받아 둔 표를 그대로 훑는다
+  {
+    T.renderRaidTypes();
+    const chips = T.$('#rkchips').innerHTML;
+    check('칩에 슈퍼리그', chips.includes('data-rk="L1500"'), true);
+    check('칩에 하이퍼리그', chips.includes('data-rk="L2500"'), true);
+    check('칩에 18개 타입', (chips.match(/data-rk="T/g) || []).length, 18);
+
+    T.rkOpen = 'L1500'; T.renderRank();
+    const sup = T.$('#rkout').innerHTML;
+    check('슈퍼리그 목록 100줄', (sup.match(/class="rrow"/g) || []).length, 100);
+    check('슈퍼리그 1위가 맨 앞', sup.indexOf('1위') < sup.indexOf('2위'), true);
+    check('리그 목록에 기술 한글명', /[가-힣]+ \//.test(sup), true);
+    check('리그 목록에 영문 기술 안 샘', !/[a-z]{3,} \//.test(sup.replace(/<[^>]*>/g, '')), true);
+
+    T.rkOpen = 'T' + 'rock'; T.renderRank();
+    const rk = T.$('#rkout').innerHTML;
+    check('바위 목록 100줄', (rk.match(/class="rrow"/g) || []).length, 100);
+    check('바위 목록에 DPS 표시', rk.includes('DPS'), true);
+
+    T.rkOpen = null; T.renderRank();
+    check('칩을 다시 누르면 접힘', T.$('#rkout').innerHTML, '');
+  }
+
+  // 자료 기준일은 PokeMiners 가 올린 날이어야 한다 (빌드한 날이 아니라)
+  check('pve.json 기준일 형식', /^\d{4}-\d{2}-\d{2}$/.test(T.PVE.built), true);
 
   // 특정 포켓몬의 타입별 순위 조회
   {

@@ -19,9 +19,28 @@ import crypto from 'node:crypto';
 const SRC = 'https://raw.githubusercontent.com/PokeMiners/game_masters/master/latest/latest.json';
 const OUT = path.resolve(process.cwd(), 'pve.json');
 
-const raw = process.argv[2]
-  ? JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+const FILE_ARG = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
+const DATE_ARG = (process.argv.find(a => a.startsWith('--date=')) || '').slice(7) || null;
+
+const raw = FILE_ARG
+  ? JSON.parse(fs.readFileSync(FILE_ARG, 'utf8'))
   : await (await fetch(SRC)).json();
+
+/* 자료 기준일은 **PokeMiners 가 GAME_MASTER 를 올린 날**이어야 합니다.
+   빌드한 날짜를 적으면 열흘 묵은 자료가 오늘 것처럼 보입니다. */
+async function sourceDate() {
+  if (DATE_ARG) return DATE_ARG;
+  try {
+    const r = await fetch('https://api.github.com/repos/PokeMiners/game_masters/commits?path=latest/latest.json&per_page=1',
+      { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'pogo-iv-build' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    return j[0].commit.author.date.slice(0, 10);
+  } catch (e) {
+    console.error(`※ PokeMiners 갱신일을 확인하지 못했습니다 (${e.message}). 오늘 날짜로 적습니다.`);
+    return new Date().toISOString().slice(0, 10);
+  }
+}
 
 const T = s => String(s).replace('POKEMON_TYPE_', '').toLowerCase();
 
@@ -123,13 +142,13 @@ const cpm = raw.find(t => t.data.playerLevel).data.playerLevel.cpMultiplier;
    그래서 내용 해시를 버전으로 삼고, 해시가 같으면 기존 파일을 손대지 않습니다. */
 const body = { types: ORDER, K, cpm, chart, moves, megaMoves };
 const ver = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);
+const built = await sourceDate();
 
-let built = new Date().toISOString().slice(0, 10);
 if (fs.existsSync(OUT)) {
   try {
     const old = JSON.parse(fs.readFileSync(OUT, 'utf8'));
-    if (old.ver === ver) {
-      console.error(`pve.json — 내용 그대로 (ver ${ver}, 기준일 ${old.built}). 건드리지 않습니다.`);
+    if (old.ver === ver && old.built === built) {
+      console.error(`pve.json — 내용도 기준일도 그대로 (ver ${ver}, 기준일 ${built}). 건드리지 않습니다.`);
       process.exit(0);
     }
   } catch { /* 깨진 파일이면 새로 만든다 */ }
