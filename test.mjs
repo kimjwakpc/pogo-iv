@@ -143,7 +143,7 @@ async function boot() {
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
   chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
   setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf, raidForms, renderRaidMon,
-  MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow,
+  MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow, TYPE_KO,
   get rkOpen(){return rkOpen}, set rkOpen(v){rkOpen=v},
   get PVE(){return PVE}, get RANK(){return RANK},
   get GM(){return GM}, get IDX(){return IDX}, get R15(){return R15}, get R25(){return R25},
@@ -428,7 +428,26 @@ async function main() {
 
   // 메가 전용 3번째 기술 (메가레벨 4)
   {
-    check('메가 전용기 13개', Object.keys(T.PVE.megaMoves).length, 13);
+    check('메가 전용기 15개', Object.keys(T.PVE.megaMoves).length, 15);
+    // mgrann03 에서 보강한 두 마리 (PokeMiners 8/29 판에는 없음)
+    check('메가 독침붕 전용기', JSON.stringify(T.PVE.megaMoves['15_mega']),
+      '{"t":"bug","p":140,"d":2000,"e":-100,"f":0,"base":"FELL_STINGER"}');
+    check('메가 헬가 전용기', JSON.stringify(T.PVE.megaMoves['229_mega']),
+      '{"t":"dark","p":150,"d":3000,"e":-100,"f":0,"base":"DARK_PULSE"}');
+    // 전용기는 원본과 지속시간이 같고 에너지는 항상 -100 (15개 전부 확인)
+    const odd = Object.entries(T.PVE.megaMoves).filter(([k, m]) => {
+      const o = T.PVE.moves[m.base];
+      return !o || o.d !== m.d || m.e !== -100 || o.t !== m.t;
+    });
+    check('전용기 규칙(시간=원본, 에너지=-100, 타입=원본)', odd.length ? odd.map(x => x[0]).join(', ') : '지켜짐', '지켜짐');
+    // 독침붕·헬가가 실제로 그 타입 1위가 되는지
+    for (const [sid, type, label] of [['beedrill_mega', 'bug', '메가 독침붕'], ['houndoom_mega', 'dark', '메가 헬가']]) {
+      const p = T.IDX.get(sid);
+      check(`${label} 전용기 인식`, !!T.megaMoveOf(p), true);
+      const rank = T.RANK[type].findIndex(e => e.p.speciesId === sid && !e.sh) + 1;
+      check(`${label} ${T.TYPE_KO ? '' : ''}${type} 1위`, rank, 1);
+    }
+
     const dn = T.IDX.get('dragonite_mega');
     const mv = T.megaMoveOf(dn);
     check('메가 망나뇽 전용기 인식', mv && mv.base, 'OUTRAGE');
@@ -557,6 +576,26 @@ async function main() {
 
   // 자료 기준일은 PokeMiners 가 올린 날이어야 한다 (빌드한 날이 아니라)
   check('pve.json 기준일 형식', /^\d{4}-\d{2}-\d{2}$/.test(T.PVE.built), true);
+
+  // pvpoke 가 아는 기술을 우리가 전부 계산할 수 있어야 한다.
+  // 이름이 어긋나면 그 기술은 조용히 빠지고 순위가 틀어집니다 (미래예지가 그랬습니다).
+  {
+    const used = new Set();
+    for (const p of T.GM.pokemon) {
+      if (p.released === false) continue;
+      for (const m of [...(p.fastMoves || []), ...(p.chargedMoves || [])]) used.add(m);
+    }
+    const unpriced = [...used].filter(m => !T.PVE.moves[m]);
+    check('출시 포켓몬 기술 중 값이 없는 것', unpriced.length ? unpriced.join(', ') : '없음', '없음');
+    check('미래예지 값 있음', !!T.PVE.moves.FUTURE_SIGHT, true);
+    check('미래예지 위력', T.PVE.moves.FUTURE_SIGHT.p, 115);
+    check('히든파워 얼음 타입', T.PVE.moves.HIDDEN_POWER_ICE.t, 'ice');
+
+    // 미래예지가 실제로 조합 후보에 들어가는지 (후딘 에스퍼)
+    const ala = T.IDX.get('alakazam');
+    const psy = T.setsByType(ala, false).psychic;
+    check('후딘 에스퍼 조합 산출됨', !!psy && psy.length > 0, true);
+  }
 
   // 특정 포켓몬의 타입별 순위 조회
   {
