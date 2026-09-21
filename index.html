@@ -55,6 +55,7 @@ h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
 .rname{flex:1;min-width:110px}
 .rmv{color:var(--mut);font-size:12.5px;flex:1;min-width:150px}
 .rnum{color:var(--dim);font-size:11.5px;flex:none;font-variant-numeric:tabular-nums}
+.riv{display:block;color:var(--dim);font-size:11.5px;font-variant-numeric:tabular-nums;margin-top:1px}
 .exc{color:var(--accent);font-weight:600}
 .ralt{padding-top:2px;border-top:0;opacity:.65;padding-left:8px}
 .ralt .rmv{font-size:12px}
@@ -1067,13 +1068,33 @@ function renderRaidTypes(){
 }
 
 /* 리그(PvP) 순위 한 줄 */
-function leagueRow(sid,e,rank){
+/* 최적 개체값 — 4096 조합을 다 돌되 정렬 없이 1등만 찾는다 (순위표 100줄을 빠르게 그리려고).
+   한 마리 탭의 rankAll()[0] 과 같은 결과여야 합니다 (test.mjs 가 대조합니다). */
+const BEST_IV={};
+function bestIV(p,cap){
+  const k=p.speciesId+'|'+cap;
+  if(BEST_IV[k]) return BEST_IV[k];
+  const b=p.baseStats; let best=null;
+  for(let h=15;h>=0;h--)for(let d=15;d>=0;d--)for(let a=15;a>=0;a--){
+    const l=maxLevel(b,a,d,h,cap); if(l===null) continue;
+    const c=cpm(l), sp=(b.atk+a)*c*(b.def+d)*c*Math.floor((b.hp+h)*c);
+    if(!best||sp>best.sp) best={sp,a,d,h,l,cp:calcCP(b,c,a,d,h)};
+  }
+  return BEST_IV[k]=best;
+}
+
+/* 리그(PvP) 순위 한 줄 — 정석 기술(대기머는 *), 최적 개체값·레벨·CP */
+function leagueRow(sid,e,rank,cap){
   const p=IDX.get(sid);
   const tc=p?(TYPE_C[p.types[0]]||'#6C8CD5'):'#6C8CD5';
-  const mv=(e.mv||[]).map(m=>esc(moveKo(m)));
+  const el=new Set((p&&p.eliteMoves)||[]);
+  const mv=(e.mv||[]).map(m=>mvOne(m,el.has(m)));
+  const iv=p?bestIV(p,cap):null;
+  const ivTxt=iv?'<small class="riv">최적 '+iv.a+'/'+iv.d+'/'+iv.h+' · Lv'+iv.l+' · CP'+iv.cp+
+    (iv.l>40?' <span class="el">XL</span>':'')+'</small>':'';
   return '<div class="rrow" style="--tc:'+tc+'">'+
     '<b class="rrank">'+rank+'위</b>'+
-    '<span class="rname">'+esc(p?nameKo(p):sid)+'</span>'+
+    '<span class="rname">'+esc(p?nameKo(p):sid)+ivTxt+'</span>'+
     '<span class="rmv">'+(mv.length?mv[0]+' / '+mv.slice(1).join(' · '):'')+'</span>'+
     '<span class="rnum">'+(e.sc!=null?e.sc:'')+'</span></div>';
 }
@@ -1089,8 +1110,9 @@ function renderRank(){
     const RK = cap===1500?R15:R25;
     const rows=[...RK.entries()].sort((a,b)=>a[1].r-b[1].r).slice(0,RANK_N);
     out.innerHTML='<div class="note">'+(cap===1500?'슈퍼':'하이퍼')+'리그 상위 '+rows.length+
-      ' (전체 '+RK.size+'). pvpoke 순위이고, 기술은 그 순위를 낸 정석 배치입니다. 오른쪽 숫자는 pvpoke 점수입니다.</div>'+
-      rows.map(([sid,e])=>leagueRow(sid,e,e.r)).join('');
+      ' (전체 '+RK.size+'). pvpoke 순위이고, 기술은 그 순위를 낸 정석 배치입니다(* 는 대기머). '+
+      '이름 아래는 이 리그의 최적 개체값과 그때의 레벨·CP 이며, XL 은 레벨 40 을 넘어 XL사탕이 필요하다는 뜻입니다. 오른쪽 숫자는 pvpoke 점수입니다.</div>'+
+      rows.map(([sid,e])=>leagueRow(sid,e,e.r,cap)).join('');
   }else{
     const t=rkOpen.slice(1);
     if(!RANK||!RANK[t]){ out.innerHTML='<div class="empty">레이드 자료를 불러오지 못했습니다.</div>'; return; }

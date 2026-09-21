@@ -143,7 +143,7 @@ async function boot() {
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
   chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
   setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf, raidForms, renderRaidMon,
-  MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow, TYPE_KO,
+  MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow, TYPE_KO, bestIV,
   get rkOpen(){return rkOpen}, set rkOpen(v){rkOpen=v},
   get PVE(){return PVE}, get RANK(){return RANK},
   get GM(){return GM}, get IDX(){return IDX}, get R15(){return R15}, get R25(){return R25},
@@ -564,6 +564,28 @@ async function main() {
     check('슈퍼리그 1위가 맨 앞', sup.indexOf('1위') < sup.indexOf('2위'), true);
     check('리그 목록에 기술 한글명', /[가-힣]+ \//.test(sup), true);
     check('리그 목록에 영문 기술 안 샘', !/[a-z]{3,} \//.test(sup.replace(/<[^>]*>/g, '')), true);
+
+    // 최적 개체값 — 한 마리 탭(rankAll)과 같은 답이어야 한다
+    for (const [sid, cap] of [['gyarados',1500],['gyarados',2500],['ampharos',2500],['corviknight',2500],['medicham',1500]]) {
+      const p = T.IDX.get(sid), b = T.bestIV(p, cap), r = T.rankAll(p.baseStats, cap)[0];
+      check(`최적IV ${sid} ${cap}`, b.a+'/'+b.d+'/'+b.h+' Lv'+b.l, r.a+'/'+r.d+'/'+r.h+' Lv'+r.l);
+    }
+    check('갸라도스 슈퍼 최적 0/14/15', (b=>b.a+'/'+b.d+'/'+b.h)(T.bestIV(T.IDX.get('gyarados'),1500)), '0/14/15');
+    check('리그 목록에 최적 개체값 표시', sup.includes('최적 '), true);
+    T.rkOpen = 'L1500'; T.renderRank();
+    const sup2 = T.$('#rkout').innerHTML;
+    check('리그 목록 최적IV 줄 100개', (sup2.match(/class="riv"/g)||[]).length, 100);
+    // 대기머 표시 — 목록의 정석 기술 중 eliteMoves 에 있는 것만 * 가 붙어야 한다
+    {
+      let want = 0;
+      for (const [sid, e] of [...T.R15.entries()].sort((a,b)=>a[1].r-b[1].r).slice(0,100)) {
+        const el = new Set((T.IDX.get(sid)||{}).eliteMoves||[]);
+        want += (e.mv||[]).filter(m=>el.has(m)).length;
+      }
+      const got = (sup2.match(/<span class="el">[^<]*\*<\/span>/g)||[]).length;
+      check('리그 목록 대기머 * 개수', got, want);
+      check('대기머가 실제로 있음', want > 0, true);
+    }
 
     T.rkOpen = 'T' + 'rock'; T.renderRank();
     const rk = T.$('#rkout').innerHTML;
