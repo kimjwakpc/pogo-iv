@@ -199,6 +199,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 .t-keep{background:rgba(63,191,127,.16);color:var(--keep)}
 .t-cull{background:rgba(224,82,95,.16);color:var(--cull)}
 .t-hold{background:rgba(233,185,73,.16);color:var(--hold)}
+.t-check{background:rgba(108,140,213,.18);color:var(--accent)}
 .rowbtn{background:none;border:0;color:var(--dim);cursor:pointer;font-size:15px;padding:0 4px}
 .rowbtn:hover{color:var(--cull)}
 
@@ -255,8 +256,15 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 <section id="p-bulk" class="hide">
   <label class="field">
     <span class="lab">한 줄에 한 마리씩. 이름 공/방/체 (CP는 선택)</span>
-    <textarea class="tin" id="bulk" placeholder="아머까오 2 15 15&#10;823 0 10 15 220&#10;잉어킹 0/14/15 10"></textarea>
+    <textarea class="tin" id="bulk" placeholder="아머까오&#10;소곤룡&#10;아머까오 2 15 15&#10;823 0 10 15 220&#10;잉어킹 0/14/15 10"></textarea>
   </label>
+  <div class="note">
+    <b style="color:var(--fg)">이름만 적어도 됩니다.</b> 그러면 개체값은 보지 않고
+    리그 순위만 봐서 <span class="tag t-cull">정리</span>인지
+    <span class="tag t-check">확인</span>인지만 가립니다.
+    메타 순위 밖이면 개체값이 아무리 좋아도 정리이니, 먼저 이름만 쭉 넣어 거른 뒤
+    살아남은 것에만 개체값을 적으면 훨씬 빠릅니다.
+  </div>
   <div class="btnrow">
     <button class="btn" id="bgo">전부 판정</button>
     <button class="btn ghost" id="badd">결과를 보관함에 담기</button>
@@ -766,18 +774,22 @@ function renderOne(o){
   return H;
 }
 
-function verdictTag(v){return '<span class="tag t-'+v[0]+'">'+({keep:'유지',cull:'정리',hold:'보류'}[v[0]])+'</span>';}
+function verdictTag(v){return '<span class="tag t-'+v[0]+'">'+({keep:'유지',cull:'정리',hold:'보류',check:'확인'}[v[0]])+'</span>';}
 
 function renderTable(rows,withDel){
   if(!rows.length) return '<div class="empty">아직 담긴 개체가 없습니다.</div>';
   let H='<table><thead><tr><th>입력</th><th>개체값</th><th>가장 좋은 자리</th><th>판정</th>'+(withDel?'<th></th>':'')+'</tr></thead><tbody>';
   rows.forEach((o,i)=>{
-    const b=o.best;
-    const cell = b? esc(nameKo(b.st.p))+' '+b.L.label+
-                    '<br><b>리그 '+b.L.rk.r+'위</b>'+
-                    ' <span style="color:var(--mut)">· 개체 '+b.L.pos+'위 '+b.L.pct.toFixed(1)+'%</span>'
-                  : '<span style="color:var(--dim)">해당 없음</span>';
-    H+='<tr><td>'+esc(nameKo(o.p))+'</td><td class="n">'+o.a+'/'+o.d+'/'+o.h+'</td>'+
+    const b=o.best, sc=o.screen;
+    const cell = o.nameOnly
+      ? (sc? esc(nameKo(sc.sp))+' '+sc.label+'<br><b>리그 '+sc.rk.r+'위</b>'
+           : '<span style="color:var(--dim)">해당 없음</span>')
+      : (b? esc(nameKo(b.st.p))+' '+b.L.label+
+            '<br><b>리그 '+b.L.rk.r+'위</b>'+
+            ' <span style="color:var(--mut)">· 개체 '+b.L.pos+'위 '+b.L.pct.toFixed(1)+'%</span>'
+          : '<span style="color:var(--dim)">해당 없음</span>');
+    const ivCell = o.nameOnly? '<span style="color:var(--dim)">—</span>' : o.a+'/'+o.d+'/'+o.h;
+    H+='<tr><td>'+esc(nameKo(o.p))+'</td><td class="n">'+ivCell+'</td>'+
        '<td class="n">'+cell+'</td>'+
        '<td>'+verdictTag(o.verdict)+'</td>'+
        (withDel?'<td><button class="rowbtn" data-del="'+i+'">×</button></td>':'')+'</tr>';
@@ -864,10 +876,32 @@ $('#alfile').onchange=e=>{
 function parseLine(s){
   s=s.trim(); if(!s) return null;
   const m=s.match(/^(.+?)\s+(\d{1,2})\s*[\/\s]\s*(\d{1,2})\s*[\/\s]\s*(\d{1,2})(?:\s+(\d{2,5}))?$/);
-  if(!m) return {bad:s};
-  const hits=search(m[1]);
-  if(!hits.length) return {bad:s};
-  return {p:hits[0],a:+m[2],d:+m[3],h:+m[4],cp:m[5]?+m[5]:null};
+  if(m){
+    const hits=search(m[1]);
+    if(hits.length) return {p:hits[0],a:+m[2],d:+m[3],h:+m[4],cp:m[5]?+m[5]:null};
+  }
+  // 개체값 없이 이름만 적은 줄 — 리그 순위로 거르기만 한다
+  const only=search(s);
+  if(only.length) return {p:only[0],nameOnly:true};
+  return {bad:s};
+}
+
+/* 개체값 없이 이름만으로 거르기.
+   메타 순위 밖이면 개체값이 아무리 좋아도 정리이므로, 먼저 이것만 보고
+   살아남은 것에만 개체값을 적으면 됩니다. 몇십 마리를 한 번에 볼 때 이 편이 훨씬 빠릅니다. */
+function screenMon(p){
+  let best=null;
+  for(const sp of chainOf(p))
+    for(const [label,RK] of [['슈퍼',R15],['하이퍼',R25]]){
+      const rk=RK.get(sp.speciesId);
+      if(!rk||rk.r>CFG.metaN) continue;
+      if(!best||rk.r<best.rk.r) best={sp,label,rk};
+    }
+  const o={p,nameOnly:true,screen:best};
+  o.verdict = best
+    ? ['check', nameKo(best.sp)+' '+best.label+'리그 '+best.rk.r+'위 — 개체값을 적어 확인하세요']
+    : ['cull','메타 '+CFG.metaN+'위 안에 드는 자리가 없음 — 개체값 볼 것 없이 정리'];
+  return o;
 }
 let bulkRows=[];
 $('#bgo').onclick=()=>{
@@ -876,17 +910,26 @@ $('#bgo').onclick=()=>{
   const rows=[],bad=[];
   lines.forEach(l=>{ const r=parseLine(l); if(!r) return;
     if(r.bad){bad.push(r.bad);return;}
-    rows.push(evalMon(r.p,r.a,r.d,r.h,r.cp,false));
+    rows.push(r.nameOnly? screenMon(r.p) : evalMon(r.p,r.a,r.d,r.h,r.cp,false));
   });
   bulkRows=rows;
-  let H=renderTable(rows,false);
+  const n={keep:0,cull:0,hold:0,check:0};
+  rows.forEach(o=>n[o.verdict[0]]++);
+  let H='';
+  if(rows.length) H+='<div class="note" style="margin-top:14px">'+rows.length+'마리 — '+
+    [['유지',n.keep],['확인',n.check],['보류',n.hold],['정리',n.cull]]
+      .filter(x=>x[1]).map(x=>x[0]+' '+x[1]).join(' · ')+'</div>';
+  H+=renderTable(rows,false);
   if(bad.length) H+='<div class="err">읽지 못한 줄: '+bad.map(esc).join(' · ')+'</div>';
   $('#bout').innerHTML=H;
 };
 $('#badd').onclick=()=>{
   if(!bulkRows.length){ alert('먼저 판정을 실행해 주세요.'); return; }
-  bulkRows.forEach(o=>BOX.push({id:o.p.speciesId,a:o.a,d:o.d,h:o.h,cp:o.cp,legacy:false}));
-  saveBox(); alert(bulkRows.length+'마리를 담았습니다.');
+  const ok=bulkRows.filter(o=>!o.nameOnly), skip=bulkRows.length-ok.length;
+  if(!ok.length){ alert('개체값을 적은 줄이 없어 담을 것이 없습니다.'); return; }
+  ok.forEach(o=>BOX.push({id:o.p.speciesId,a:o.a,d:o.d,h:o.h,cp:o.cp,legacy:false}));
+  saveBox();
+  alert(ok.length+'마리를 담았습니다.'+(skip?'\n개체값을 안 적은 '+skip+'마리는 뺐습니다.':''));
 };
 
 

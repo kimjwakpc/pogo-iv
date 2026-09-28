@@ -143,7 +143,7 @@ async function boot() {
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
   chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
   setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf, raidForms, renderRaidMon,
-  MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow, TYPE_KO, bestIV,
+  MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow, TYPE_KO, bestIV, parseLine, screenMon, renderTable,
   get rkOpen(){return rkOpen}, set rkOpen(v){rkOpen=v},
   get PVE(){return PVE}, get RANK(){return RANK},
   get GM(){return GM}, get IDX(){return IDX}, get R15(){return R15}, get R25(){return R25},
@@ -617,6 +617,51 @@ async function main() {
     const ala = T.IDX.get('alakazam');
     const psy = T.setsByType(ala, false).psychic;
     check('후딘 에스퍼 조합 산출됨', !!psy && psy.length > 0, true);
+  }
+
+  // 여러 마리 탭 — 이름만 적으면 리그 순위로만 거른다
+  {
+    // 줄 읽기
+    const full = T.parseLine('아머까오 2 15 15');
+    check('개체값 줄 읽기', full && full.p.speciesId + ' ' + full.a + full.d + full.h, 'corviknight 21515');
+    check('개체값 줄은 nameOnly 아님', !!(full || {}).nameOnly, false);
+    const only = T.parseLine('아머까오');
+    check('이름만 적은 줄', !!(only || {}).nameOnly, true);
+    check('이름만 줄도 포켓몬을 찾음', only.p.speciesId, 'corviknight');
+    check('도감번호만 적어도 됨', (T.parseLine('823') || {}).p.speciesId, 'corviknight');
+    check('초성만 적어도 됨', (T.parseLine('ㅇㅁㄲㅇ') || {}).p.speciesId, 'corviknight');
+    check('CP 붙은 줄', (o => o.a + '/' + o.d + '/' + o.h + ' cp' + o.cp)(T.parseLine('잉어킹 0/14/15 10')), '0/14/15 cp10');
+    check('없는 이름은 못 읽음', !!(T.parseLine('없는포켓몬이름') || {}).bad, true);
+
+    // 거르기 — 메타 안이면 '확인', 밖이면 '정리'
+    const good = T.screenMon(T.IDX.get('corviknight'));
+    check('메타 안 → 확인', good.verdict[0], 'check');
+    check('확인 줄에 리그 순위', /리그 \d+위/.test(good.verdict[1]), true);
+    const bad = T.screenMon(T.IDX.get('magikarp'));
+    check('잉어킹은 진화형(갸라도스)이 메타 안 → 확인', bad.verdict[0], 'check');
+    check('  그 자리가 갸라도스', bad.screen.sp.speciesId, 'gyarados');
+
+    // 메타 밖인 종은 개체값 볼 것 없이 정리
+    const outs = T.GM.pokemon.filter(p => p.released !== false && !/_shadow|_mega/.test(p.speciesId))
+      .filter(p => T.chainOf(p).every(sp => {
+        const a = T.R15.get(sp.speciesId), b = T.R25.get(sp.speciesId);
+        return (!a || a.r > T.CFG.metaN) && (!b || b.r > T.CFG.metaN);
+      }));
+    check('메타 밖인 종이 실제로 있음', outs.length > 0, true);
+    check('메타 밖 → 정리', T.screenMon(outs[0]).verdict[0], 'cull');
+    check('  개체값 볼 것 없다고 안내', /개체값 볼 것 없이/.test(T.screenMon(outs[0]).verdict[1]), true);
+
+    // 표 — 개체값 칸은 비우고 순위만
+    const html = T.renderTable([T.screenMon(T.IDX.get('corviknight'))], false);
+    check('표에 개체값 대신 —', html.includes('>—<'), true);
+    check('표에 리그 순위', /리그 \d+위/.test(html), true);
+    check('표에 개체 순위는 없음', /개체 \d+위/.test(html), false);
+
+    // 설정의 메타 순위를 좁히면 판정이 바뀐다
+    const keep = T.CFG.metaN;
+    T.CFG.metaN = 1;
+    check('메타 1위로 좁히면 아머까오는 정리', T.screenMon(T.IDX.get('corviknight')).verdict[0], 'cull');
+    T.CFG.metaN = keep;
   }
 
   // 특정 포켓몬의 타입별 순위 조회
