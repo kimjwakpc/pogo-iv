@@ -657,6 +657,29 @@ async function main() {
     check('표에 리그 순위', /리그 \d+위/.test(html), true);
     check('표에 개체 순위는 없음', /개체 \d+위/.test(html), false);
 
+    // 표에도 정석 기술배치가 나와야 한다 (이름만 적은 줄 · 개체값 적은 줄 둘 다)
+    {
+      const cv = T.IDX.get('corviknight');
+      const rk = T.R25.get('corviknight') || T.R15.get('corviknight');
+      const el = new Set(cv.eliteMoves || []);
+      const want = (rk.mv || []).map(m => T.moveKo(m));
+      check('이름만 줄 — 표에 기술 표시', want.every(n => html.includes(n)), true);
+      check('  기술 줄 태그', html.includes('class="tmv"'), true);
+      const full = T.renderTable([T.evalMon(cv, 2, 15, 15, null, false)], false);
+      check('개체값 줄 — 표에 기술 표시', want.every(n => full.includes(n)), true);
+      // 대기머는 해당 기술에만 * 가 붙는다
+      const starred = (html.match(/<span class="el">([^<]*)\*<\/span>/g) || []).length;
+      check('표의 대기머 * 개수', starred, (rk.mv || []).filter(m => el.has(m)).length);
+      check('  아머까오는 대기머가 있음', (rk.mv || []).some(m => el.has(m)), true);
+      // 순위에 못 든 줄에는 기술이 없다
+      const outs = T.GM.pokemon.filter(p => p.released !== false && !/_shadow|_mega/.test(p.speciesId))
+        .filter(p => T.chainOf(p).every(sp => {
+          const a = T.R15.get(sp.speciesId), b2 = T.R25.get(sp.speciesId);
+          return (!a || a.r > T.CFG.metaN) && (!b2 || b2.r > T.CFG.metaN);
+        }));
+      check('해당 없음 줄엔 기술 줄 없음', T.renderTable([T.screenMon(outs[0])], false).includes('class="tmv"'), false);
+    }
+
     // 설정의 메타 순위를 좁히면 판정이 바뀐다
     const keep = T.CFG.metaN;
     T.CFG.metaN = 1;

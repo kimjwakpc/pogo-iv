@@ -56,6 +56,7 @@ h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
 .rmv{color:var(--mut);font-size:12.5px;flex:1;min-width:150px}
 .rnum{color:var(--dim);font-size:11.5px;flex:none;font-variant-numeric:tabular-nums}
 .riv{display:block;color:var(--dim);font-size:11.5px;font-variant-numeric:tabular-nums;margin-top:1px}
+.tmv{color:var(--mut);font-size:11.5px;margin-top:3px;line-height:1.45}
 .exc{color:var(--accent);font-weight:600}
 .ralt{padding-top:2px;border-top:0;opacity:.65;padding-left:8px}
 .ralt .rmv{font-size:12px}
@@ -776,17 +777,25 @@ function renderOne(o){
 
 function verdictTag(v){return '<span class="tag t-'+v[0]+'">'+({keep:'유지',cull:'정리',hold:'보류',check:'확인'}[v[0]])+'</span>';}
 
+/* 그 순위를 낸 정석 기술배치. 대기머가 필요한 기술에는 * 를 붙입니다 (순위 탭과 같은 방식). */
+function tableMv(sp,rk){
+  const mv=(rk&&rk.mv)||[]; if(!mv.length) return '';
+  const el=new Set(sp.eliteMoves||[]);
+  const t=mv.map(m=>mvOne(m,el.has(m)));
+  return '<div class="tmv">'+t[0]+' / '+t.slice(1).join(' · ')+'</div>';
+}
 function renderTable(rows,withDel){
   if(!rows.length) return '<div class="empty">아직 담긴 개체가 없습니다.</div>';
   let H='<table><thead><tr><th>입력</th><th>개체값</th><th>가장 좋은 자리</th><th>판정</th>'+(withDel?'<th></th>':'')+'</tr></thead><tbody>';
   rows.forEach((o,i)=>{
     const b=o.best, sc=o.screen;
     const cell = o.nameOnly
-      ? (sc? esc(nameKo(sc.sp))+' '+sc.label+'<br><b>리그 '+sc.rk.r+'위</b>'
+      ? (sc? esc(nameKo(sc.sp))+' '+sc.label+'<br><b>리그 '+sc.rk.r+'위</b>'+tableMv(sc.sp,sc.rk)
            : '<span style="color:var(--dim)">해당 없음</span>')
       : (b? esc(nameKo(b.st.p))+' '+b.L.label+
             '<br><b>리그 '+b.L.rk.r+'위</b>'+
-            ' <span style="color:var(--mut)">· 개체 '+b.L.pos+'위 '+b.L.pct.toFixed(1)+'%</span>'
+            ' <span style="color:var(--mut)">· 개체 '+b.L.pos+'위 '+b.L.pct.toFixed(1)+'%</span>'+
+            tableMv(b.st.p,b.L.rk)
           : '<span style="color:var(--dim)">해당 없음</span>');
     const ivCell = o.nameOnly? '<span style="color:var(--dim)">—</span>' : o.a+'/'+o.d+'/'+o.h;
     H+='<tr><td>'+esc(nameKo(o.p))+'</td><td class="n">'+ivCell+'</td>'+
