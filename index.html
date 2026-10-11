@@ -43,7 +43,7 @@ h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
   border-radius:6px;padding:2px 9px;
 }
 .dbar button:disabled{opacity:.5;cursor:default}
-.tabs{display:flex;gap:2px;margin-top:9px}
+.tabs{display:flex;flex-wrap:wrap;gap:2px;margin-top:9px}
 /* 레이드 */
 .rrow{
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;
@@ -57,11 +57,19 @@ h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
 .rnum{color:var(--dim);font-size:11.5px;flex:none;font-variant-numeric:tabular-nums}
 .riv{display:block;color:var(--dim);font-size:11.5px;font-variant-numeric:tabular-nums;margin-top:1px}
 .tmv{color:var(--mut);font-size:11.5px;margin-top:3px;line-height:1.45}
+.tiv{color:var(--dim);font-size:11.5px;margin-top:2px;font-variant-numeric:tabular-nums}
 .exc{color:var(--accent);font-weight:600}
 .ralt{padding-top:2px;border-top:0;opacity:.65;padding-left:8px}
 .ralt .rmv{font-size:12px}
+.stage>.rrow{padding-left:13px;padding-right:13px}
+.stage>.ralt{padding-left:21px}
+/* 대기머 비교 */
+.rtag{font-size:11px;color:var(--dim);flex:none;min-width:58px}
+.rdif{font-weight:600}
+.rdif.up{color:var(--keep)}
+.rdif.dn{color:var(--cull)}
 .tab{
-  flex:1 1 0;min-width:0;padding:7px 2px;font-size:12.5px;text-align:center;cursor:pointer;
+  flex:1 1 auto;min-width:0;padding:7px 4px;font-size:12.5px;text-align:center;cursor:pointer;
   white-space:nowrap;
   background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);
   font-family:inherit;
@@ -223,6 +231,7 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
       <button class="tab" role="tab" aria-selected="true" data-t="one">한 마리</button>
       <button class="tab" role="tab" aria-selected="false" data-t="bulk">여러 마리</button>
       <button class="tab" role="tab" aria-selected="false" data-t="raid">레이드</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="elite">대기머</button>
       <button class="tab" role="tab" aria-selected="false" data-t="rank">순위</button>
       <button class="tab" role="tab" aria-selected="false" data-t="box">보관함</button>
       <button class="tab" role="tab" aria-selected="false" data-t="set">설정</button>
@@ -295,6 +304,27 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
   <div id="rerr" class="err hide"></div>
   <div id="rout"></div>
 
+</section>
+
+<!-- ELITE -->
+<section id="p-elite" class="hide">
+  <div class="note" style="margin-top:18px">
+    이 포켓몬의 <b style="color:var(--fg)">대기머가 무엇인지</b>, 그리고
+    <b style="color:var(--fg)">그 기술을 넣은 것과 안 넣은 것이 얼마나 차이 나는지</b>를 봅니다 &mdash;
+    진화시키지 않고 모아 둔 개체를 언제 진화시킬지 정할 때 쓰세요. 계통과 메가, 그림자를 모두 계산합니다.
+    위 줄이 대기머를 쓴 최선, 아래 <span class="rtag" style="min-width:0">대기머 없이</span> 줄이
+    안 열었을 때의 최선이고, 끝의 <span class="rdif dn">-3</span> 은 그만큼 DPS 를 잃는다는 뜻입니다
+    (DPS·TDO 는 그 타입 1위를 100으로 놓은 상대값).
+    순위는 그 조합으로 바꿨을 때 앉게 되는 자리이고,
+    기술 뒤의 <span class="el">*</span> 는 대기머, <span class="exc">파란 *</span> 는 메가 전용 기술입니다.
+  </div>
+  <label class="field">
+    <span class="lab">도감번호 · 이름 · 초성 · 별명</span>
+    <input class="tin" id="eq" placeholder="팬텀 · ㅍㅌ · 94" autocomplete="off" enterkeyhint="search">
+  </label>
+  <button class="btn" id="ego">대기머 보기</button>
+  <div id="eerr" class="err hide"></div>
+  <div id="eout"></div>
 </section>
 
 <!-- RANK -->
@@ -784,6 +814,12 @@ function tableMv(sp,rk){
   const t=mv.map(m=>mvOne(m,el.has(m)));
   return '<div class="tmv">'+t[0]+' / '+t.slice(1).join(' · ')+'</div>';
 }
+/* 그 자리의 최적 개체값 — 내 개체값과 바로 견주라고 한 줄 더 붙입니다 (순위 탭과 같은 방식). */
+function tableIV(t){
+  if(!t) return '';
+  return '<div class="tiv">최적 '+t.a+'/'+t.d+'/'+t.h+' · Lv'+t.l+' · CP'+t.cp+
+         (t.l>40?' <span class="el">XL</span>':'')+'</div>';
+}
 function renderTable(rows,withDel){
   if(!rows.length) return '<div class="empty">아직 담긴 개체가 없습니다.</div>';
   let H='<table><thead><tr><th>입력</th><th>개체값</th><th>가장 좋은 자리</th><th>판정</th>'+(withDel?'<th></th>':'')+'</tr></thead><tbody>';
@@ -791,11 +827,12 @@ function renderTable(rows,withDel){
     const b=o.best, sc=o.screen;
     const cell = o.nameOnly
       ? (sc? esc(nameKo(sc.sp))+' '+sc.label+'<br><b>리그 '+sc.rk.r+'위</b>'+tableMv(sc.sp,sc.rk)
+             +tableIV(bestIV(sc.sp,sc.cap))
            : '<span style="color:var(--dim)">해당 없음</span>')
       : (b? esc(nameKo(b.st.p))+' '+b.L.label+
             '<br><b>리그 '+b.L.rk.r+'위</b>'+
             ' <span style="color:var(--mut)">· 개체 '+b.L.pos+'위 '+b.L.pct.toFixed(1)+'%</span>'+
-            tableMv(b.st.p,b.L.rk)
+            tableMv(b.st.p,b.L.rk)+tableIV(b.L.top)
           : '<span style="color:var(--dim)">해당 없음</span>');
     const ivCell = o.nameOnly? '<span style="color:var(--dim)">—</span>' : o.a+'/'+o.d+'/'+o.h;
     H+='<tr><td>'+esc(nameKo(o.p))+'</td><td class="n">'+ivCell+'</td>'+
@@ -901,10 +938,10 @@ function parseLine(s){
 function screenMon(p){
   let best=null;
   for(const sp of chainOf(p))
-    for(const [label,RK] of [['슈퍼',R15],['하이퍼',R25]]){
+    for(const [label,RK,cap] of [['슈퍼',R15,1500],['하이퍼',R25,2500]]){
       const rk=RK.get(sp.speciesId);
       if(!rk||rk.r>CFG.metaN) continue;
-      if(!best||rk.r<best.rk.r) best={sp,label,rk};
+      if(!best||rk.r<best.rk.r) best={sp,label,rk,cap};
     }
   const o={p,nameOnly:true,screen:best};
   o.verdict = best
@@ -983,7 +1020,9 @@ function megaMoveOf(p){
   const mv=PVE.megaMoves[p.dex+'_'+m[1]];
   return mv?Object.assign({id:'MEGA_EXCLUSIVE'},mv):null;
 }
-function setsByType(p,shadow){
+/* 타입별 **모든** 조합을 점수 내림차순으로. setsByType 이 이걸 두 줄로 줄여 쓰고,
+   대기머 탭은 "대기머를 안 쓴 최선" 을 찾느라 줄이지 않은 목록이 필요합니다. */
+function allSetsByType(p,shadow){
   const C40=cpm(RAID_LV);
   const atk=(p.baseStats.atk+15)*C40*(shadow?PVE.K.shadowAtk:1);
   const def=(p.baseStats.def+15)*C40*(shadow?PVE.K.shadowDef:1);
@@ -1011,8 +1050,13 @@ function setsByType(p,shadow){
         eF,eC,elite:eF||eC});
     }
   }
+  for(const t in out) out[t].sort((a,b)=>b.score-a.score);
+  return out;
+}
+function setsByType(p,shadow){
+  const out=allSetsByType(p,shadow);
   for(const t in out){
-    const L=out[t]; L.sort((a,b)=>b.score-a.score);
+    const L=out[t];
     // 1위가 전용기라면 둘째 자리는 "전용기를 안 열었을 때" 를 보여 줍니다.
     // 5000 메가에너지를 쓸 값어치가 있는지 바로 견줄 수 있게.
     const second = L[0].exc ? L.find(e=>!e.exc) : L[1];
@@ -1105,6 +1149,97 @@ function renderRaidMon(p){
     : '<div class="note">'+esc(nameKo(p))+' 자체는 '+RAID_CUT+'위 밖입니다. 진화시켰을 때의 자리를 냅니다.</div>';
   return head+H;
 }
+
+/* ---------- 대기머 탭 ----------
+   "대기머를 넣은 최선" 과 "대기머를 안 넣은 최선" 을 나란히 놓습니다.
+   진화시키지 않고 모아 둔 개체를 언제(어느 커뮤니티데이에) 진화시킬지 정하려면 이 차이가 필요합니다.
+   순위는 그 점수를 그 타입 순위표에 끼워 넣었을 때의 자리입니다 (자기 자신은 빼고 셉니다). */
+function raidPct(t,e){
+  const ref=RANK&&RANK[t]&&RANK[t][0]; if(!ref) return e;
+  e.dpsP=Math.round(e.dps/ref.dps*100); e.tdoP=Math.round(e.tdo/ref.tdo*100); return e;
+}
+function rankIf(t,sp,sh,score){
+  if(!RANK||!RANK[t]) return null;
+  return RANK[t].filter(x=>x.score>score&&!(x.p.speciesId===sp.speciesId&&x.sh===sh)).length+1;
+}
+function eliteCmp(sp,sh){
+  if(!PVE||!(sp.eliteMoves||[]).length) return [];
+  const all=allSetsByType(sp,sh), out=[];
+  for(const t in all){
+    const L=all[t];
+    if(!L[0].elite) continue;                   // 대기머가 1위 조합에 없으면 견줄 것이 없다
+    const mk=e=>raidPct(t,Object.assign({},e,{type:t,rank:rankIf(t,sp,sh,e.score)}));
+    const no=L.find(e=>!e.elite);
+    out.push({type:t,on:mk(L[0]),off:no?mk(no):null});
+  }
+  return out.sort((a,b)=>(a.on.rank||9999)-(b.on.rank||9999));
+}
+const numDif=(e,ref)=>{
+  const d=e.dpsP-ref.dpsP;
+  return '<span class="rnum">DPS '+e.dpsP+' · TDO '+e.tdoP+
+    ' <span class="rdif '+(d>0?'up':d<0?'dn':'')+'">'+(d>0?'+':'')+d+'</span></span>';
+};
+const ELITE_T=6;                                 // 타입은 많아야 이만큼만 보여 준다
+function eliteBlock(sp,sh){
+  const el=(sp.eliteMoves||[]);
+  if(!el.length) return '';
+  const tc=TYPE_C[sp.types[0]]||'#6C8CD5';
+  let H='<div class="stage" style="--tc:'+tc+'"><div class="sthead"><b>'+esc(raidName(sp,sh))+'</b>'+
+    '<span class="types">'+sp.types.filter(t=>t!=='none').map(t=>
+      '<span class="ty" style="background:'+TYPE_C[t]+'">'+TYPE_KO[t]+'</span>').join('')+'</span></div>';
+  // 일반기 대기머와 차지기 대기머는 구하는 방법이 달라서 나눠서 보여 줍니다.
+  const mvs=l=>l.map(m=>esc(moveKo(m))).join(', ');
+  const fm=(sp.fastMoves||[]), cm=(sp.chargedMoves||[]);
+  const eF=el.filter(m=>fm.includes(m)), eC=el.filter(m=>cm.includes(m)),
+        eX=el.filter(m=>!fm.includes(m)&&!cm.includes(m));
+  H+='<div class="elite">대기머 '+el.length+'개'+
+     (eF.length?' · 일반기 '+mvs(eF):'')+(eC.length?' · 차지기 '+mvs(eC):'')+
+     (eX.length?' · '+mvs(eX):'')+'</div>';
+  // 배틀리그 — 그 순위를 낸 정석 배치가 대기머를 쓰는지.
+  // 그림자는 pvpoke 에서 따로 매겨지므로 _shadow 쪽을 봅니다 (안 그러면 일반형 순위를 그대로 베낍니다).
+  const lsid = sh? sp.speciesId+'_shadow' : sp.speciesId;
+  const lel = ((IDX.get(lsid)||sp).eliteMoves)||el;
+  const lg=[];
+  [['슈퍼',R15],['하이퍼',R25]].forEach(([lab,RK])=>{
+    const rk=RK&&RK.get(lsid); if(!rk) return;
+    const need=(rk.mv||[]).filter(m=>lel.includes(m));
+    lg.push(lab+'리그 '+rk.r+'위 — 정석 배치에 대기머 '+
+      (need.length?'<b style="color:var(--hold)">필요</b> ('+need.map(m=>esc(moveKo(m))).join(', ')+')':'불필요'));
+  });
+  if(lg.length) H+='<div class="note" style="padding:8px 13px;margin:0">'+lg.join('<br>')+'</div>';
+  const cmp=eliteCmp(sp,sh);
+  if(!cmp.length)
+    H+='<div class="note" style="padding:8px 13px;margin:0">레이드에서는 어느 타입에서도 대기머가 1위 조합에 들지 않습니다 &mdash; 레이드용으로는 대기머를 열 필요가 없습니다.</div>';
+  else cmp.slice(0,ELITE_T).forEach(c=>{
+    H+=raidRow(c.on,false,false);
+    H+='<div class="rrow ralt"><span class="rtag">대기머 없이</span>'+
+       (c.off? '<b class="rrank">'+c.off.rank+'위</b><span class="rmv">'+mvTxt(c.off)+'</span>'+numDif(c.off,c.on)
+             : '<span class="rmv" style="color:var(--dim)">대기머 말고는 이 타입을 찌를 조합이 없습니다</span>')+
+       '</div>';
+  });
+  return H+'</div>';
+}
+/* 레이드 탭과 같은 후보군(계통 · 메가 · 그림자)에서 대기머가 있는 것만 */
+function renderEliteMon(p){
+  let H='', seen=new Set();
+  for(const [sp,sh] of raidForms(p)){
+    const k=sp.speciesId+'|'+sh; if(seen.has(k)) continue; seen.add(k);
+    H+=eliteBlock(sp,sh);
+  }
+  if(!H) return '<div class="empty">'+esc(nameKo(p))+' 는 진화 계통과 메가, 그림자를 다 따져도 대기머가 없습니다. '+
+    '대기머는 커뮤니티데이나 특전기 이벤트로만 들어오므로, 아직 그런 이벤트를 받지 않은 포켓몬입니다.</div>';
+  return H;
+}
+function runElite(){
+  const err=$('#eerr'); err.className='err hide';
+  if(!GM){ err.className='err'; err.textContent='데이터를 아직 불러오는 중입니다.'; return; }
+  if(!PVE){ err.className='err'; err.textContent='레이드 자료(pve.json)를 불러오지 못했습니다. 새로고침해 주세요.'; return; }
+  const hits=search($('#eq').value);
+  if(!hits.length){ err.className='err'; err.textContent='그런 포켓몬을 찾지 못했습니다.'; $('#eout').innerHTML=''; return; }
+  $('#eout').innerHTML=renderEliteMon(hits[0]);
+}
+$('#ego').onclick=runElite;
+$('#eq').addEventListener('keydown',e=>{ if(e.key==='Enter') runElite(); });
 
 function showMegaLv(){
   const e=$('#mlv'); if(e) e.textContent='메가레벨 '+CFG.megaLv+' (×'+megaPlusMult().toFixed(1)+')';
@@ -1249,7 +1384,7 @@ $('#ovfile').onchange=e=>{
 /* ---------- tabs ---------- */
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));
-  ['one','bulk','raid','rank','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
+  ['one','bulk','raid','elite','rank','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
   if(t.dataset.t==='box') renderBox();
 });
 

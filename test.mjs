@@ -142,7 +142,8 @@ async function boot() {
   showStamp, parseTS, fmtDay, PATCHES,
   FORM_KO, NOT_FORM, FORM_KEEP, KO_NAME,
   chosung, isCho, aliasesOf, renderAl, get ALIAS(){return ALIAS},
-  setsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf, raidForms, renderRaidMon,
+  setsByType, allSetsByType, raidRanksOf, canShadow, raidDmg, buildRanks, megaMoveOf, raidForms, renderRaidMon,
+  eliteCmp, eliteBlock, renderEliteMon, rankIf, tableIV,
   MEGA_PLUS, megaPlusMult, showMegaLv, renderRank, renderRaidTypes, leagueRow, TYPE_KO, bestIV, parseLine, screenMon, renderTable,
   get rkOpen(){return rkOpen}, set rkOpen(v){rkOpen=v},
   get PVE(){return PVE}, get RANK(){return RANK},
@@ -428,7 +429,10 @@ async function main() {
 
   // 메가 전용 3번째 기술 (메가레벨 4)
   {
-    check('메가 전용기 15개', Object.keys(T.PVE.megaMoves).length, 15);
+    // 전용기는 패치마다 늘어납니다(2026-09-14 기준 15개 → 09-21 에 16개).
+    // 고정된 숫자를 적으면 Actions 가 하나 보태는 날 테스트가 깨지므로 "줄어들지 않았는가" 만 봅니다.
+    const nMega = Object.keys(T.PVE.megaMoves).length;
+    check('메가 전용기 16개 이상 (' + nMega + '개)', nMega >= 16, true);
     // mgrann03 에서 보강한 두 마리 (PokeMiners 8/29 판에는 없음)
     check('메가 독침붕 전용기', JSON.stringify(T.PVE.megaMoves['15_mega']),
       '{"t":"bug","p":140,"d":2000,"e":-100,"f":0,"base":"FELL_STINGER"}');
@@ -680,6 +684,29 @@ async function main() {
       check('해당 없음 줄엔 기술 줄 없음', T.renderTable([T.screenMon(outs[0])], false).includes('class="tmv"'), false);
     }
 
+    // 표에 그 자리의 최적 개체값도 나와야 한다 (이름만 적은 줄 · 개체값 적은 줄 둘 다)
+    {
+      const cv = T.IDX.get('corviknight');
+      const sc = T.screenMon(cv);
+      check('이름만 줄 — 거른 자리의 CP 상한', sc.screen.cap, sc.screen.label === '슈퍼' ? 1500 : 2500);
+      const iv = T.bestIV(sc.screen.sp, sc.screen.cap);
+      const want = '최적 ' + iv.a + '/' + iv.d + '/' + iv.h + ' · Lv' + iv.l + ' · CP' + iv.cp;
+      check('이름만 줄 — 표에 최적 개체값', html.includes(want), true);
+      check('  최적 개체값 줄 태그', html.includes('class="tiv"'), true);
+      // 개체값을 적은 줄은 rankAll 이 낸 1등을 쓴다 — bestIV 와 같은 값이어야 한다
+      const o = T.evalMon(cv, 2, 15, 15, null, false);
+      const top = o.best.L.top, bi = T.bestIV(o.best.st.p, o.best.L.cap);
+      check('개체값 줄 — 최적 IV 가 bestIV 와 같음',
+        top.a + '/' + top.d + '/' + top.h + ' Lv' + top.l, bi.a + '/' + bi.d + '/' + bi.h + ' Lv' + bi.l);
+      const full2 = T.renderTable([o], false);
+      check('개체값 줄 — 표에 최적 개체값', full2.includes('최적 ' + top.a + '/' + top.d + '/' + top.h), true);
+      // Lv40 을 넘으면 XL 표시
+      check('Lv40 초과면 XL 표시', T.tableIV({ a: 0, d: 15, h: 15, l: 47.5, cp: 2499 }).includes('XL'), true);
+      check('Lv40 이하면 XL 없음', T.tableIV({ a: 0, d: 15, h: 15, l: 25, cp: 1499 }).includes('XL'), false);
+      check('해당 없음 줄엔 최적 개체값 없음',
+        T.renderTable([T.screenMon(outs[0])], false).includes('class="tiv"'), false);
+    }
+
     // 설정의 메타 순위를 좁히면 판정이 바뀐다
     const keep = T.CFG.metaN;
     T.CFG.metaN = 1;
@@ -687,11 +714,132 @@ async function main() {
     T.CFG.metaN = keep;
   }
 
+  // 대기머 탭 — 대기머를 넣은 것과 안 넣은 것의 비교
+  {
+    // allSetsByType 은 줄이지 않은 목록, setsByType 은 두 줄로 줄인 것
+    const gg = T.IDX.get('gengar');
+    const all = T.allSetsByType(gg, false), two = T.setsByType(gg, false);
+    const types = Object.keys(all);
+    check('allSetsByType 타입이 나옴', types.length > 0, true);
+    check('setsByType 는 타입당 최대 2줄', Object.values(two).every(L => L.length <= 2), true);
+    check('allSetsByType 는 줄이지 않음', types.some(t => all[t].length > 2), true);
+    check('allSetsByType 는 점수 내림차순',
+      types.every(t => all[t].every((e, i) => i === 0 || all[t][i - 1].score >= e.score)), true);
+
+    // rankIf 가 실제 순위표와 같은 자리를 내는지 (자기 자신은 빼고 센다)
+    const rp = T.IDX.get('rampardos');
+    const rs0 = T.raidRanksOf(rp, false);
+    check('rankIf 가 실제 순위와 일치', T.rankIf(rs0[0].type, rp, false, rs0[0].score), rs0[0].rank);
+
+    // 대기머가 있는 종 — 비교줄이 제대로 나오는지
+    const withEl = T.GM.pokemon.filter(p => p.released !== false && (p.eliteMoves || []).length);
+    check('대기머가 있는 종이 있음', withEl.length > 0, true);
+    let cmpN = 0, bad = [];
+    for (const p of withEl) {
+      const cmp = T.eliteCmp(p, false);
+      cmpN += cmp.length;
+      for (const c of cmp) {
+        if (!c.on.elite) bad.push(p.speciesId + ' ' + c.type + ': 위 줄이 대기머가 아님');
+        if (c.off && c.off.elite) bad.push(p.speciesId + ' ' + c.type + ': 아래 줄이 대기머임');
+        if (c.off && c.off.score > c.on.score) bad.push(p.speciesId + ' ' + c.type + ': 아래 줄이 더 셈');
+        if (c.off && c.off.rank < c.on.rank) bad.push(p.speciesId + ' ' + c.type + ': 아래 줄 순위가 더 높음');
+      }
+      const ranks = cmp.map(c => c.on.rank);
+      if (ranks.some((r, i) => i && ranks[i - 1] > r)) bad.push(p.speciesId + ': 순위 정렬이 안 됨');
+    }
+    check('대기머 비교줄이 실제로 나옴', cmpN > 0, true);
+    check('비교줄 규칙 위반', bad.length ? bad.slice(0, 3).join(' / ') : '없음', '없음');
+
+    // 대기머가 없는 종은 비교할 것이 없다
+    const noEl = T.GM.pokemon.find(p => p.released !== false && !(p.eliteMoves || []).length);
+    check('대기머 없는 종은 비교 없음', T.eliteCmp(noEl, false).length, 0);
+    // 계통·메가·그림자 어디에도 대기머가 없는 종은 화면에서 그렇게 말한다
+    const noElAll = T.GM.pokemon.find(p => p.released !== false &&
+      T.raidForms(p).every(([sp]) => !(sp.eliteMoves || []).length));
+    check('계통 전체에 대기머가 없는 종이 있음', !!noElAll, true);
+    if (noElAll) {
+      check('  화면에도 그렇게 말함', /대기머가 없습니다/.test(T.renderEliteMon(noElAll)), true);
+      check('  빈 화면에는 비교줄 없음', T.renderEliteMon(noElAll).includes('대기머 없이'), false);
+    }
+
+    // 화면 — 대기머 이름 · 비교줄 · 리그 정석 배치 여부
+    {
+      const eg = withEl.find(p => T.eliteCmp(p, false).length) || gg;
+      const html = T.renderEliteMon(eg);
+      check('대기머 화면에 대기머 이름', (eg.eliteMoves || []).every(m => html.includes(T.moveKo(m))), true);
+      check('대기머 화면에 비교줄', html.includes('대기머 없이'), true);
+      check('대기머 화면에 순위', /\d+위/.test(html), true);
+      const lgOne = T.GM.pokemon.find(p => (p.eliteMoves || []).length && T.R15.get(p.speciesId));
+      check('리그 순위가 있는 대기머 보유종이 있음', !!lgOne, true);
+      if (lgOne) {
+        const lh = T.renderEliteMon(lgOne);
+        check('리그 줄에 정석 배치 대기머 여부', /정석 배치에 대기머 (<b[^>]*>필요<\/b>|불필요)/.test(lh), true);
+        check('  그 리그 순위도 같이', new RegExp('슈퍼리그 ' + T.R15.get(lgOne.speciesId).r + '위').test(lh), true);
+      }
+      // 대기머가 정석 배치에 들어가는 종은 "필요" 로 나와야 한다
+      const needOne = T.GM.pokemon.find(p => {
+        const e = p.eliteMoves || []; const rk = T.R15.get(p.speciesId) || T.R25.get(p.speciesId);
+        return e.length && rk && (rk.mv || []).some(m => e.includes(m));
+      });
+      if (needOne) check('정석 배치가 대기머면 필요로 표기', /대기머 <b[^>]*>필요<\/b>/.test(T.renderEliteMon(needOne)), true);
+
+      // 대기머는 일반기·차지기를 나눠서 보여 준다
+      const gh = T.renderEliteMon(gg);
+      const gf = (gg.eliteMoves || []).filter(m => (gg.fastMoves || []).includes(m));
+      const gc = (gg.eliteMoves || []).filter(m => (gg.chargedMoves || []).includes(m));
+      check('팬텀 대기머가 일반기·차지기 둘 다', gf.length > 0 && gc.length > 0, true);
+      check('  일반기 대기머를 따로 표기', gh.includes('일반기 ' + gf.map(m => T.moveKo(m)).join(', ')), true);
+      check('  차지기 대기머를 따로 표기', gh.includes('차지기 ' + gc.map(m => T.moveKo(m)).join(', ')), true);
+
+      // 그림자는 pvpoke 에서 따로 매겨지므로 일반형 순위를 베끼면 안 된다
+      const shOne = T.GM.pokemon.find(p => (p.eliteMoves || []).length && T.canShadow(p) &&
+        T.R15.get(p.speciesId) && T.R15.get(p.speciesId + '_shadow') &&
+        T.R15.get(p.speciesId).r !== T.R15.get(p.speciesId + '_shadow').r);
+      check('그림자 순위가 다른 대기머 보유종이 있음', !!shOne, true);
+      if (shOne) {
+        const b1 = T.eliteBlock(shOne, false), b2 = T.eliteBlock(shOne, true);
+        check('일반형 리그 순위', new RegExp('슈퍼리그 ' + T.R15.get(shOne.speciesId).r + '위').test(b1), true);
+        check('그림자는 그림자 리그 순위',
+          new RegExp('슈퍼리그 ' + T.R15.get(shOne.speciesId + '_shadow').r + '위').test(b2), true);
+      }
+    }
+
+    // 메가 전용기는 대기머가 아니다 — 비교줄의 "없이" 쪽에 전용기가 섞여도 되지만
+    // 대기머 플래그로 잡히면 안 된다
+    {
+      const mg = T.GM.pokemon.find(p => T.megaMoveOf(p));
+      if (mg) {
+        const sets = T.allSetsByType(mg, false);
+        const exc = Object.values(sets).flat().filter(e => e.exc);
+        check('메가 전용기 조합이 있음', exc.length > 0, true);
+        // 차지기 쪽 대기머 표시는 절대 붙지 않는다 (일반기가 대기머면 elite 는 참일 수 있다)
+        check('전용기는 차지기 대기머로 세지 않음', exc.every(e => !e.eC), true);
+      }
+    }
+  }
+
   // 특정 포켓몬의 타입별 순위 조회
   {
     const rs = T.raidRanksOf(T.IDX.get('rampardos'), false);
     check('램펄드 순위 조회됨', rs.length > 0, true);
     check('램펄드 최고 타입이 바위', rs[0].type, 'rock');
+  }
+
+  // --dump 이름 : 그 포켓몬의 대기머 화면을 글자로 찍어 봅니다 (눈으로 확인할 때)
+  {
+    const q = arg('--dump', null);
+    if (q) {
+      const p = findMon(T, q);
+      console.log('\n──── 대기머 화면: ' + T.nameKo(p) + ' ────');
+      console.log(T.renderEliteMon(p)
+        .replace(/<\/div>/g, '\n').replace(/<br>/g, '\n').replace(/<[^>]+>/g, '')
+        .split('\n').map(s => s.trim()).filter(Boolean).join('\n'));
+      console.log('──── 여러 마리 표 (이름만 / 개체값까지) ────');
+      console.log(T.renderTable([T.screenMon(p), T.evalMon(p, 2, 15, 15, null, false)], false)
+        .replace(/<\/t[dhr]>/g, ' | ').replace(/<\/div>/g, ' ⏎ ').replace(/<br>/g, ' ⏎ ')
+        .replace(/<[^>]+>/g, '').split('\n').map(s => s.trim()).filter(Boolean).join('\n'));
+      console.log('────────\n');
+    }
   }
 
   // 출력
