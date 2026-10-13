@@ -4,213 +4,307 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>개체값 판독기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
 <style>
 :root{
-  --ink:#0E1420; --panel:#172132; --panel2:#1F2B3F; --line:#2C3A52;
-  --fg:#E8EDF5; --mut:#8798B2; --dim:#5D6E88;
-  --keep:#3FBF7F; --cull:#E0525F; --hold:#E9B949;
-  --accent:#6C8CD5;
+  --ink:#0A0F1A; --panel:#111A2B; --panel2:#18233A; --line:#26334D;
+  --fg:#EEF2F8; --mut:#A3B0C6; --dim:#8391AA;
+  --keep:#4CD394; --cull:#FF7A85; --hold:#F2C45A;
+  --accent:#8FB0FF;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"IBM Plex Sans KR",monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
   background:var(--ink); color:var(--fg);
-  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic","Segoe UI",sans-serif;
+  font-family:"IBM Plex Sans KR",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic","Segoe UI",sans-serif;
   font-size:15px; line-height:1.5;
   padding:0 0 64px; -webkit-text-size-adjust:100%;
 }
-.wrap{max-width:680px;margin:0 auto;padding:0 14px}
-h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+.wrap{max-width:680px;margin:0 auto;padding:0 16px}
+h1{font-size:18px;font-weight:700;margin:0;letter-spacing:-.02em;white-space:nowrap}
 .top{
-  position:sticky;top:0;z-index:20;background:rgba(14,20,32,.94);
-  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:20;background:rgba(10,15,26,.94);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
 }
-.topin{max-width:680px;margin:0 auto;padding:10px 14px}
-.brow{display:flex;align-items:baseline;gap:10px;justify-content:space-between}
-.stat{font-size:11.5px;color:var(--dim);text-align:right;line-height:1.35;flex:none}
+.topin{max-width:680px;margin:0 auto;padding:8px 16px 0 8px}
+.brow{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.ttl{display:flex;align-items:center;gap:4px;min-width:0}
+.menu{
+  width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;
+  background:none;border:0;border-radius:12px;color:var(--fg);cursor:pointer;padding:0;
+}
+.menu:hover{background:var(--panel)}
+.menu:focus-visible,.dclose:focus-visible,.ditem:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.stat{font-size:11px;color:var(--dim);text-align:right;line-height:1.4;flex:none}
 .stat b{color:var(--mut);font-weight:600}
+
+/* 탭 줄 — 스크롤바 없이 손가락·마우스로 끌어서 넘깁니다 */
+.tabsw{position:relative;margin-left:8px}
+.tabs{
+  display:flex;gap:6px;margin-top:6px;padding:0 32px 12px 0;overflow-x:auto;scroll-padding-inline:0 36px;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+}
+.tabs::-webkit-scrollbar{display:none}
+.tabs[data-drag]{cursor:grabbing;user-select:none}
+.tabsw::after{
+  content:"\203A";position:absolute;right:0;top:6px;height:40px;width:32px;
+  display:flex;align-items:center;justify-content:flex-end;color:var(--dim);font-size:20px;
+  background:linear-gradient(90deg,rgba(10,15,26,0),var(--ink) 60%);pointer-events:none;
+  opacity:0;transition:opacity .15s;
+}
+.tabsw[data-more=true]::after{opacity:1}
+.tab{
+  flex:none;min-height:40px;padding:0 14px;font-size:14px;cursor:pointer;white-space:nowrap;
+  background:none;border:1px solid var(--line);border-radius:20px;color:var(--mut);font-family:inherit;
+}
+.tab:hover{color:var(--fg)}
+.tab[aria-selected=true]{background:var(--fg);border-color:var(--fg);color:var(--ink);font-weight:600}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 전체 메뉴 (삼선 버튼) */
+.scrim{
+  position:fixed;inset:0;z-index:40;background:rgba(5,8,15,.78);
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+.drawer{
+  position:fixed;top:0;left:0;bottom:0;z-index:41;width:min(300px,84vw);
+  padding:calc(10px + env(safe-area-inset-top)) 12px 24px;background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;gap:4px;overflow-y:auto;
+  transform:translateX(-100%);visibility:hidden;transition:transform .22s ease,visibility 0s .22s;
+}
+body[data-menu=true]{overflow:hidden}
+body[data-menu=true] .scrim{opacity:1;pointer-events:auto}
+body[data-menu=true] .drawer{transform:none;visibility:visible;transition:transform .22s ease}
+.dhead{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:0 0 10px 8px;margin-bottom:8px;border-bottom:1px solid var(--line);
+}
+.dhead b{font-size:17px;font-weight:700}
+.dclose{
+  width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;
+  background:none;border:0;border-radius:12px;color:var(--mut);cursor:pointer;padding:0;
+}
+.ditem{
+  display:block;width:100%;text-align:left;padding:10px 12px;border-radius:12px;
+  border:1px solid transparent;background:none;color:var(--fg);cursor:pointer;font-family:inherit;
+}
+.ditem b{display:block;font-size:15px;font-weight:600}
+.ditem span{display:block;font-size:12px;color:var(--dim);margin-top:1px}
+.ditem:hover{background:var(--panel2)}
+.ditem[aria-current=page]{border-color:var(--accent);background:var(--panel2)}
+.dfoot{margin-top:auto;padding:16px 8px 0;font-size:11.5px;color:var(--dim);line-height:1.6}
+@media (prefers-reduced-motion:reduce){.drawer,.scrim{transition:none}}
+
 /* 데이터 기준일 알림 */
 .dbar{
-  display:none;margin:14px 0 0;padding:9px 11px;border-radius:8px;
-  background:rgba(233,185,73,.10);border:1px solid rgba(233,185,73,.42);
+  display:none;margin:16px 0 0;padding:10px 12px;border-radius:12px;
+  background:rgba(242,196,90,.10);border:1px solid rgba(242,196,90,.42);
   color:var(--hold);font-size:12.5px;line-height:1.55;
 }
 .dbar.on{display:block}
 .dbar b{color:var(--fg);font-weight:600}
 .dbar button{
   margin-left:8px;font-family:inherit;font-size:12px;cursor:pointer;
-  background:none;border:1px solid rgba(233,185,73,.55);color:var(--hold);
-  border-radius:6px;padding:2px 9px;
+  background:none;border:1px solid rgba(242,196,90,.55);color:var(--hold);
+  border-radius:8px;padding:3px 10px;
 }
 .dbar button:disabled{opacity:.5;cursor:default}
-.tabs{display:flex;flex-wrap:wrap;gap:2px;margin-top:9px}
-/* 레이드 */
+
+/* 레이드 · 순위 줄 */
 .rrow{
-  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-  padding:7px 0;border-top:1px solid var(--line);font-size:13px;
+  display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;
+  padding:10px 0;border-top:1px solid var(--line);font-size:13px;
 }
 .rrow:first-of-type{border-top:0}
-.rtype{font-size:11.5px;padding:1px 7px;border-radius:5px;font-weight:600;flex:none}
-.rrank{font-size:15px;min-width:46px;flex:none}
-.rname{flex:1;min-width:110px}
+.rtype{font-size:11.5px;padding:2px 8px;border-radius:8px;font-weight:600;flex:none}
+.rrank{font-family:var(--mono);font-size:15px;font-weight:600;min-width:46px;flex:none}
+.rname{flex:1;min-width:110px;font-weight:600}
 .rmv{color:var(--mut);font-size:12.5px;flex:1;min-width:150px}
 .rnum{color:var(--dim);font-size:11.5px;flex:none;font-variant-numeric:tabular-nums}
-.riv{display:block;color:var(--dim);font-size:11.5px;font-variant-numeric:tabular-nums;margin-top:1px}
-.tmv{color:var(--mut);font-size:11.5px;margin-top:3px;line-height:1.45}
-.tiv{color:var(--dim);font-size:11.5px;margin-top:2px;font-variant-numeric:tabular-nums}
+.riv{display:block;color:var(--dim);font-size:11.5px;font-weight:400;font-variant-numeric:tabular-nums;margin-top:2px}
+.tmv{color:var(--mut);font-size:12.5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);line-height:1.6}
+.tiv{color:var(--dim);font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
+.el{color:var(--hold)}
 .exc{color:var(--accent);font-weight:600}
 .ralt{padding-top:2px;border-top:0;opacity:.65;padding-left:8px}
 .ralt .rmv{font-size:12px}
-.stage>.rrow{padding-left:13px;padding-right:13px}
-.stage>.ralt{padding-left:21px}
+.stage>.rrow{padding-left:16px;padding-right:16px}
+.stage>.ralt{padding-left:24px}
+/* 순위 탭 목록은 카드 하나로 묶고, 상위 3위를 크게 */
+#rkout .rrow{padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-top:0}
+#rkout .note+.rrow{border-top:1px solid var(--line);border-radius:18px 18px 0 0;margin-top:12px}
+#rkout .rrow:last-child{border-radius:0 0 18px 18px}
+#rkout .rrow:nth-child(-n+4) .rrank{font-size:21px;color:var(--tc,var(--fg))}
+#rkout .rrow:nth-child(-n+4) .rname{font-size:15px}
 /* 대기머 비교 */
 .rtag{font-size:11px;color:var(--dim);flex:none;min-width:58px}
 .rdif{font-weight:600}
 .rdif.up{color:var(--keep)}
 .rdif.dn{color:var(--cull)}
-.tab{
-  flex:1 1 auto;min-width:0;padding:7px 4px;font-size:12.5px;text-align:center;cursor:pointer;
-  white-space:nowrap;
-  background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);
-  font-family:inherit;
-}
-.tab[aria-selected=true]{color:var(--fg);border-bottom-color:var(--accent)}
-.tab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* inputs */
-.field{display:block;margin:14px 0 0}
-.lab{font-size:12px;color:var(--mut);margin-bottom:5px}
+.field{display:block;margin:16px 0 0}
+.lab{font-size:12px;color:var(--mut);margin-bottom:6px}
 input,textarea,select,button{font-family:inherit;font-size:15px}
 .tin{
-  width:100%;padding:11px 12px;background:var(--panel);color:var(--fg);
-  border:1px solid var(--line);border-radius:7px;
+  width:100%;min-height:52px;padding:0 14px;background:var(--panel);color:var(--fg);
+  border:1px solid var(--line);border-radius:14px;font-size:16px;
 }
 .tin:focus{outline:none;border-color:var(--accent)}
-textarea.tin{min-height:120px;resize:vertical;font-size:14px;line-height:1.7}
-.ivrow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
-.ivbox{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 8px}
-.ivbox label{display:block;font-size:11px;color:var(--mut);margin-bottom:3px}
+textarea.tin{min-height:132px;padding:12px 14px;resize:vertical;font-size:15px;line-height:1.75}
+.ivrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.ivbox{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.ivbox:focus-within{border-color:var(--accent)}
+.ivbox label{display:block;font-size:12px;color:var(--mut)}
 .ivbox input{
   width:100%;background:none;border:0;color:var(--fg);
-  font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;padding:0;
+  font-family:var(--mono);font-size:28px;font-weight:600;line-height:1.2;padding:0;
 }
 .ivbox input:focus{outline:none}
-.ivbox.cp input{color:var(--mut);font-weight:500}
+.ivb{display:block;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.ivb i{display:block;height:100%;width:0;border-radius:3px;background:var(--accent);transition:width .15s}
+.ivb[data-full=true] i{background:var(--hold)}
+.ivbox.cp{grid-column:1/-1;flex-direction:row;align-items:center;gap:12px;min-height:52px;padding:0 14px}
+.ivbox.cp label{flex:none}
+.ivbox.cp input{font-size:16px;font-weight:500}
 .btn{
-  display:block;width:100%;margin-top:12px;padding:12px;border-radius:7px;
-  background:var(--accent);color:#0B1020;border:0;font-weight:600;cursor:pointer;
+  display:block;width:100%;margin-top:14px;min-height:54px;padding:0 12px;border-radius:14px;
+  background:var(--accent);color:var(--ink);border:0;font-size:16px;font-weight:700;cursor:pointer;
 }
 .btn:active{opacity:.85}
-.btn.ghost{background:none;border:1px solid var(--line);color:var(--mut);font-weight:500}
-.btnrow{display:flex;gap:8px}
-.btnrow .btn{margin-top:12px}
-.chk{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;color:var(--mut)}
-.chk input{width:17px;height:17px;accent-color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--mut);font-size:14px;font-weight:500}
+.btnrow{display:flex;gap:10px}
+.btnrow .btn{margin-top:14px}
+.chk{display:flex;align-items:center;gap:10px;margin-top:10px;min-height:44px;font-size:14px;color:var(--mut)}
+.chk input{width:18px;height:18px;margin:0;accent-color:var(--accent)}
 
 /* form picker */
-.forms{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.forms{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .chipgap{flex-basis:100%;height:0}
 .fchip{
-  padding:6px 11px;border-radius:99px;font-size:13px;cursor:pointer;
-  background:var(--panel);border:1px solid var(--line);color:var(--mut);
+  min-height:36px;padding:0 14px;border-radius:18px;font-size:13px;cursor:pointer;
+  background:none;border:1px solid var(--line);color:var(--mut);
 }
 .fchip[aria-pressed=true]{background:var(--panel2);border-color:var(--accent);color:var(--fg)}
+#rkchips .fchip{min-width:64px;border-radius:12px;background:var(--panel);color:var(--c,var(--fg));color:color-mix(in srgb,var(--c,#EEF2F8) 78%,#fff)}
+#rkchips .fchip[aria-pressed=true]{background:var(--c,var(--fg));border-color:var(--c,var(--fg));color:var(--ink);font-weight:700}
 
 /* result */
-.res{margin-top:22px}
-.hdr{border-top:3px solid var(--tc,#6C8CD5);padding-top:11px}
-.nm{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-.nm b{font-size:22px;font-weight:650;letter-spacing:-.02em}
-.dex{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
-.edit{background:none;border:0;color:var(--dim);cursor:pointer;font-size:12px;padding:2px 5px}
-.edit:hover{color:var(--fg)}
+.res{margin-top:24px}
+.hdr{
+  padding:16px 18px;border-radius:18px;border:1px solid var(--line);
+  background:var(--panel2);background:color-mix(in srgb,var(--tc,#8FB0FF) 13%,var(--panel));
+}
+.nm{display:flex;align-items:baseline;gap:6px 10px;flex-wrap:wrap}
+.nm b{font-size:26px;font-weight:700;letter-spacing:-.03em}
+.dex{font-size:13px;color:var(--mut);font-family:var(--mono)}
+.edit{
+  background:none;border:1px solid var(--line);color:var(--mut);cursor:pointer;
+  font-size:12px;padding:3px 10px;border-radius:8px;
+}
+.edit:hover{color:var(--fg);border-color:var(--mut)}
 .types{display:flex;gap:5px;margin-top:7px}
-.ty{font-size:11.5px;padding:2px 8px;border-radius:99px;color:#0B1020;font-weight:600}
+.ty{font-size:12px;padding:2px 9px;border-radius:12px;color:#0A0F1A;font-weight:600}
 
 .verdict{
-  margin-top:14px;padding:11px 13px;border-radius:8px;
-  display:flex;align-items:center;gap:10px;font-size:14px;
+  margin-top:12px;padding:14px 16px;border-radius:14px;
+  display:flex;align-items:center;gap:12px;font-size:14px;line-height:1.45;
 }
-.verdict b{font-size:15px}
-.v-keep{background:rgba(63,191,127,.13);color:var(--keep)}
-.v-cull{background:rgba(224,82,95,.13);color:var(--cull)}
-.v-hold{background:rgba(233,185,73,.13);color:var(--hold)}
+.verdict b{font-size:17px;font-weight:700;flex:none}
+.verdict span{color:var(--fg)}
+.v-keep{background:rgba(76,211,148,.12);color:var(--keep)}
+.v-cull{background:rgba(255,122,133,.12);color:var(--cull)}
+.v-hold{background:rgba(242,196,90,.12);color:var(--hold)}
 
-.lg{margin-top:16px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.lgh{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:9px 13px;background:var(--panel);border-bottom:1px solid var(--line);
-}
-.lgh span{font-size:13px;color:var(--mut)}
-.rank{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
-.lgb{padding:12px 13px;background:var(--panel2)}
-.big{display:flex;align-items:baseline;gap:7px}
-.big em{
-  font-style:normal;font-size:34px;font-weight:700;line-height:1;
-  font-variant-numeric:tabular-nums;letter-spacing:-.03em;
-}
-.big i{font-style:normal;font-size:13px;color:var(--mut)}
-.bar{height:4px;background:var(--line);border-radius:99px;margin-top:10px;overflow:hidden}
-.bar div{height:100%;border-radius:99px;background:var(--tc,#6C8CD5)}
-.kv{display:flex;flex-wrap:wrap;gap:x;margin-top:10px;font-size:13px}
-.kv>div{margin-right:16px}
-.kv b{font-variant-numeric:tabular-nums;font-weight:600}
-.kv span{color:var(--mut)}
-.mv{margin-top:9px;font-size:13.5px;line-height:1.6}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-top:12px;overflow:hidden}
+.bar div{height:100%;border-radius:3px;background:var(--tc,#8FB0FF)}
+.bar.ok div{background:var(--keep)}
+.bar.lo div{background:var(--hold)}
+.mv{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:13.5px;line-height:1.6}
+.mv small{display:block;font-size:12px;color:var(--dim)}
 .mv .fast{color:var(--fg)}
-.mv .el{color:var(--hold)}
-.na{padding:12px 13px;background:var(--panel2);font-size:13.5px;color:var(--dim)}
 
 .note{margin-top:14px;font-size:12.5px;color:var(--dim);line-height:1.6}
 
-
-/* stage blocks */
-.stage{margin-top:14px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+/* stage blocks — 계통 한 단계 = 카드 하나, 리그마다 한 칸 */
+.stage{margin-top:12px;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--panel)}
 .sthead{
-  display:flex;align-items:center;gap:9px;padding:9px 13px;
-  background:var(--panel);border-left:3px solid var(--tc,#6C8CD5);
+  display:flex;align-items:center;gap:10px;padding:14px 16px;
+  background:var(--panel2);background:color-mix(in srgb,var(--tc,#8FB0FF) 11%,var(--panel));
 }
-.sthead b{font-size:15.5px;font-weight:650}
-.sthead .sub{font-size:11px;color:var(--hold);border:1px solid var(--hold);padding:0 5px;border-radius:4px}
-.sthead .types{display:flex;gap:4px;margin-left:auto}
-.lgrow{display:flex;gap:10px;padding:11px 13px;background:var(--panel2);border-top:1px solid var(--line)}
-.lgname{width:44px;flex:none;font-size:12.5px;color:var(--mut);padding-top:3px}
-.lgmain{flex:1;min-width:0}
-.lgna{font-size:13px;color:var(--dim);padding-top:3px}
-.big{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
-.big em{font-style:normal;font-size:27px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
-.big i{font-style:normal;font-size:12.5px;color:var(--mut)}
-.big i.lr{margin-left:auto;color:var(--fg)}
-.big i.lr.dim{color:var(--dim)}
-
-.lgtop{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
-.lrank{font-size:15px;font-weight:650}
-.lrank.dim{color:var(--dim);font-weight:500;font-size:13.5px}
-.mrank{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
-.mrank b{font-size:20px;color:var(--fg);font-weight:700;letter-spacing:-.02em}
-.ivline{display:flex;align-items:baseline;gap:11px;margin-top:6px;font-size:13px;
-  font-variant-numeric:tabular-nums;flex-wrap:wrap}
-.ivline b{font-weight:650}
+.sthead b{font-size:16px;font-weight:700}
+.sthead .sub{font-size:11px;color:var(--hold);border:1px solid var(--hold);padding:0 6px;border-radius:6px}
+.sthead .types{display:flex;gap:5px;margin:0 0 0 auto}
+.lgrow{padding:16px;border-top:1px solid var(--line)}
+.lgrow.best{box-shadow:inset 0 0 0 1px var(--accent)}
+.lghd{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.lgname{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.lgname small{font-size:11px;font-weight:500;color:var(--accent);border:1px solid var(--accent);padding:0 7px;border-radius:6px}
+.lrank{font-size:13px;color:var(--mut)}
+.lrank b{font-family:var(--mono);font-size:20px;color:var(--fg);font-weight:600}
+.lrank.dim{color:var(--dim)}
+.lgna{margin-top:6px;font-size:13px;color:var(--dim)}
+.pct{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pct em{font-style:normal;font-size:38px;font-weight:700;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.pct em small{font-size:20px}
+.pct span{font-size:13px;color:var(--mut)}
+.ivline{display:flex;align-items:baseline;gap:4px 12px;margin-top:6px;font-size:13px;font-family:var(--mono);flex-wrap:wrap}
+.ivs{margin-top:12px}
+.ivs .ivline:first-child{margin-top:0}
+.ivline b{font-weight:600}
 .ivline span{color:var(--mut)}
-.ivline .tagl{width:30px;flex:none;font-size:11.5px;color:var(--dim)}
+.ivline .tagl{width:32px;flex:none;font-family:inherit;font-size:12px;color:var(--dim)}
 .ivline.now{color:var(--fg)}
 .ivline.best{color:var(--mut)}
-.ivline.best b{color:var(--mut);font-weight:600}
-.warn{margin-top:7px;font-size:12.5px;color:var(--cull)}
-.elite{padding:8px 13px;background:var(--panel);border-top:1px solid var(--line);font-size:12px;color:var(--hold)}
+.ivline.best b{color:var(--mut)}
+.ivline .xl{color:var(--hold)}
+.warn{margin-top:8px;font-size:12.5px;color:var(--cull)}
+.elite{padding:10px 16px;background:var(--panel2);border-top:1px solid var(--line);font-size:12.5px;color:var(--hold)}
 
 /* table */
 table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
-th,td{padding:7px 6px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th,td{padding:8px 6px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--mut);font-weight:500;font-size:11.5px}
 td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
-.tag{font-size:11px;padding:1px 6px;border-radius:4px;white-space:nowrap}
-.t-keep{background:rgba(63,191,127,.16);color:var(--keep)}
-.t-cull{background:rgba(224,82,95,.16);color:var(--cull)}
-.t-hold{background:rgba(233,185,73,.16);color:var(--hold)}
-.t-check{background:rgba(108,140,213,.18);color:var(--accent)}
-.rowbtn{background:none;border:0;color:var(--dim);cursor:pointer;font-size:15px;padding:0 4px}
+/* 여러 마리 · 보관함 표는 한 줄 = 카드 한 장 */
+#bout table,#boxout table{display:block;margin-top:12px}
+#bout thead,#boxout thead{display:none}
+#bout tbody,#boxout tbody{display:flex;flex-direction:column;gap:10px}
+#bout tr,#boxout tr{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;column-gap:8px;
+  padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+}
+#bout td,#boxout td{padding:0;border:0}
+#bout td:first-child,#boxout td:first-child{font-size:16px;font-weight:600}
+#bout td:nth-child(2),#boxout td:nth-child(2){font-family:var(--mono);color:var(--mut)}
+#bout td:nth-child(3),#boxout td:nth-child(3){grid-column:1/-1;order:5;margin-top:8px;white-space:normal;color:var(--mut);line-height:1.55}
+#bout td:nth-child(3) b,#boxout td:nth-child(3) b{color:var(--fg);font-weight:600}
+#bout tr:has(.t-check){border-style:dashed;border-color:var(--accent)}
+#bout tr:has(.t-cull),#boxout tr:has(.t-cull){background:none}
+#bout tr:has(.t-cull) td:first-child,#boxout tr:has(.t-cull) td:first-child{color:var(--mut)}
+.tag{font-size:13px;font-weight:700;padding:3px 10px;border-radius:8px;white-space:nowrap}
+.note .tag{font-size:11.5px;padding:1px 7px}
+.t-keep{background:rgba(76,211,148,.14);color:var(--keep)}
+.t-cull{background:rgba(255,122,133,.14);color:var(--cull)}
+.t-hold{background:rgba(242,196,90,.14);color:var(--hold)}
+.t-check{background:rgba(143,176,255,.16);color:var(--accent)}
+.rowbtn{background:none;border:0;color:var(--dim);cursor:pointer;font-size:18px;padding:0 4px;min-width:32px;min-height:32px}
 .rowbtn:hover{color:var(--cull)}
+/* 유지 · 확인 · 정리 개수 */
+.sum{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px;margin-top:18px}
+.sum div{padding:10px 12px;border-radius:12px;font-size:12px}
+.sum b{display:block;font-family:var(--mono);font-size:24px;font-weight:600;line-height:1.2;color:var(--fg)}
+.sum .keep{background:rgba(76,211,148,.10);color:var(--keep)}
+.sum .check{background:rgba(143,176,255,.10);color:var(--accent)}
+.sum .hold{background:rgba(242,196,90,.10);color:var(--hold)}
+.sum .cull{background:rgba(255,122,133,.10);color:var(--cull)}
 
 .empty{margin-top:26px;color:var(--dim);font-size:13.5px;line-height:1.7}
 .err{margin-top:14px;color:var(--cull);font-size:13.5px}
@@ -224,20 +318,46 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
 <header class="top">
   <div class="topin">
     <div class="brow">
-      <h1>개체값 판독기</h1>
+      <div class="ttl">
+        <button class="menu" id="menu" type="button" aria-label="전체 메뉴 열기" aria-expanded="false" aria-controls="drawer">
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <h1>개체값 판독기</h1>
+      </div>
       <div class="stat" id="stat">데이터 불러오는 중…</div>
     </div>
-    <div class="tabs" role="tablist">
-      <button class="tab" role="tab" aria-selected="true" data-t="one">한 마리</button>
-      <button class="tab" role="tab" aria-selected="false" data-t="bulk">여러 마리</button>
-      <button class="tab" role="tab" aria-selected="false" data-t="raid">레이드</button>
-      <button class="tab" role="tab" aria-selected="false" data-t="elite">대기머</button>
-      <button class="tab" role="tab" aria-selected="false" data-t="rank">순위</button>
-      <button class="tab" role="tab" aria-selected="false" data-t="box">보관함</button>
-      <button class="tab" role="tab" aria-selected="false" data-t="set">설정</button>
+    <div class="tabsw" id="tabsw">
+      <div class="tabs" role="tablist" id="tabs">
+        <button class="tab" role="tab" aria-selected="true" data-t="one">한 마리</button>
+        <button class="tab" role="tab" aria-selected="false" data-t="bulk">여러 마리</button>
+        <button class="tab" role="tab" aria-selected="false" data-t="raid">레이드</button>
+        <button class="tab" role="tab" aria-selected="false" data-t="elite">대기머</button>
+        <button class="tab" role="tab" aria-selected="false" data-t="rank">순위</button>
+        <button class="tab" role="tab" aria-selected="false" data-t="box">보관함</button>
+        <button class="tab" role="tab" aria-selected="false" data-t="set">설정</button>
+      </div>
     </div>
   </div>
 </header>
+
+<!-- 전체 메뉴: 왼쪽 위 삼선 버튼으로 엽니다 -->
+<div class="scrim" id="scrim"></div>
+<nav class="drawer" id="drawer" aria-label="전체 메뉴">
+  <div class="dhead">
+    <b>개체값 판독기</b>
+    <button class="dclose" id="dclose" type="button" aria-label="메뉴 닫기">
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <button class="ditem" data-t="one" aria-current="page"><b>한 마리</b><span>개체값 하나를 판정합니다</span></button>
+  <button class="ditem" data-t="bulk"><b>여러 마리</b><span>이름만 붙여넣어 먼저 거릅니다</span></button>
+  <button class="ditem" data-t="raid"><b>레이드</b><span>타입별 순위와 기술배치</span></button>
+  <button class="ditem" data-t="elite"><b>대기머</b><span>커뮤니티데이 진화 계획</span></button>
+  <button class="ditem" data-t="rank"><b>순위</b><span>리그 · 타입별 상위 100</span></button>
+  <button class="ditem" data-t="box"><b>보관함</b><span>담아 둔 개체</span></button>
+  <button class="ditem" data-t="set"><b>설정</b><span>판정 기준 · 메가레벨 · 별명</span></button>
+  <div class="dfoot" id="dfoot"></div>
+</nav>
 
 <main class="wrap">
 
@@ -251,9 +371,9 @@ td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
   </label>
   <div class="forms hide" id="forms"></div>
   <div class="ivrow">
-    <div class="ivbox"><label for="ia">공격</label><input id="ia" inputmode="numeric" placeholder="0"></div>
-    <div class="ivbox"><label for="id_">방어</label><input id="id_" inputmode="numeric" placeholder="15"></div>
-    <div class="ivbox"><label for="ih">체력</label><input id="ih" inputmode="numeric" placeholder="15"></div>
+    <div class="ivbox"><label for="ia">공격</label><input id="ia" inputmode="numeric" placeholder="0"><span class="ivb" aria-hidden="true"><i></i></span></div>
+    <div class="ivbox"><label for="id_">방어</label><input id="id_" inputmode="numeric" placeholder="15"><span class="ivb" aria-hidden="true"><i></i></span></div>
+    <div class="ivbox"><label for="ih">체력</label><input id="ih" inputmode="numeric" placeholder="15"><span class="ivb" aria-hidden="true"><i></i></span></div>
     <div class="ivbox cp"><label for="icp">현재 CP</label><input id="icp" inputmode="numeric" placeholder="선택"></div>
   </div>
   <label class="chk"><input type="checkbox" id="legacy"> 이벤트 특전기를 습득한 개체</label>
@@ -615,7 +735,9 @@ function showStamp(){
   ].filter(x=>x.ts);
   if(!srcs.length){ $('#stat').textContent='pvpoke 기준 · '+GM.pokemon.length+'종'; bar.className='dbar'; return; }
 
-  $('#stat').innerHTML = srcs.map(x=>x.n+' <b>'+fmtDay(x.ts)+'</b>').join(' · ')+
+  // 머리말은 폰 폭에 맞춰 날짜만 두 줄로, 종 수까지 다 적은 것은 전체 메뉴 아래에 둡니다.
+  $('#stat').innerHTML = srcs.map(x=>x.n+' <b>'+fmtDay(x.ts)+'</b>').join('<br>');
+  $('#dfoot').innerHTML = srcs.map(x=>x.n+' '+fmtDay(x.ts)).join(' · ')+
     '<br>'+GM.pokemon.length+'종 · 슈퍼 '+R15.size+' · 하이퍼 '+R25.size;
 
   // 이미 지난 패치 중 가장 최근 것보다 오래된 자료가 있는가
@@ -751,27 +873,26 @@ function stageBlock(st,o,isMega){
      '<span class="types">'+p.types.filter(t=>t!=='none').map(t=>
        '<span class="ty" style="background:'+TYPE_C[t]+'">'+TYPE_KO[t]+'</span>').join('')+'</span></div>';
   st.leagues.forEach(L=>{
-    H+='<div class="lgrow">';
-    H+='<div class="lgname">'+L.label+'</div>';
+    const isBest=o.best&&o.best.L===L;
+    H+='<div class="lgrow'+(isBest?' best':'')+'">';
+    H+='<div class="lghd"><span class="lgname">'+L.label+'리그'+(isBest?'<small>가장 좋은 자리</small>':'')+'</span>'+
+       (L.rk?'<span class="lrank">메타 <b>'+L.rk.r+'</b>위</span>'
+            :'<span class="lrank dim">순위권 밖</span>')+'</div>';
     if(!L.mine){ H+='<div class="lgna">CP 상한 미달</div></div>'; return; }
-    H+='<div class="lgmain">';
-    H+='<div class="lgtop">'+
-       (L.rk?'<span class="lrank">리그 '+L.rk.r+'위</span>'
-            :'<span class="lrank dim">순위권 밖</span>')+
-       '<span class="mrank"><b>'+L.pos+'</b>위 · '+L.pct.toFixed(1)+'%</span></div>';
-    H+='<div class="bar"><div style="width:'+Math.max(0,Math.min(100,(L.pct-90)*10)).toFixed(1)+'%"></div></div>';
-    H+='<div class="ivline now"><span class="tagl">현재</span>'+
+    H+='<div class="pct"><em>'+L.pct.toFixed(1)+'<small>%</small></em><span>개체 '+L.pos+'위 / '+L.total+'</span></div>';
+    H+='<div class="bar '+(L.pct>=CFG.thr?'ok':'lo')+'"><div style="width:'+Math.max(0,Math.min(100,(L.pct-90)*10)).toFixed(1)+'%"></div></div>';
+    H+='<div class="ivs"><div class="ivline now"><span class="tagl">현재</span>'+
        '<b>'+o.a+'/'+o.d+'/'+o.h+'</b>'+
        '<span>Lv <b>'+L.mine.l+'</b></span>'+
        '<span>CP <b>'+L.mine.cp+'</b></span>'+
-       (L.xl?'<span>XL <b>'+L.xl+'</b></span>':'')+'</div>';
+       (L.xl?'<span class="xl">XL사탕 <b>'+L.xl+'</b></span>':'')+'</div>';
     H+='<div class="ivline best"><span class="tagl">최적</span>'+
        '<b>'+L.top.a+'/'+L.top.d+'/'+L.top.h+'</b>'+
        '<span>Lv <b>'+L.top.l+'</b></span>'+
-       '<span>CP <b>'+L.top.cp+'</b></span></div>';
+       '<span>CP <b>'+L.top.cp+'</b></span></div></div>';
     if(L.over) H+='<div class="warn">현재 레벨('+lvTxt(o.cur)+')이 목표를 넘어 이 리그 진입 불가</div>';
-    if(L.rk) H+='<div class="mv"><span class="fast">'+mv(L.rk.mv[0])+'</span> / '+mv(L.rk.mv[1])+' + '+mv(L.rk.mv[2])+'</div>';
-    H+='</div></div>';
+    if(L.rk) H+='<div class="mv"><small>정석 기술</small><span class="fast">'+mv(L.rk.mv[0])+'</span> / '+mv(L.rk.mv[1])+' · '+mv(L.rk.mv[2])+'</div>';
+    H+='</div>';
   });
   if(el.size) H+='<div class="elite">대기머: '+[...el].map(m=>esc(moveKo(m))).join(', ')+'</div>';
   return H+'</div>';
@@ -805,6 +926,12 @@ function renderOne(o){
   return H;
 }
 
+/* 유지 · 확인 · 보류 · 정리 개수 칸. 0 인 칸은 뺍니다 (유지와 정리는 늘 보입니다). */
+function sumTiles(n){
+  return '<div class="sum" role="status">'+[['keep','유지'],['check','확인'],['hold','보류'],['cull','정리']]
+    .filter(([k])=>n[k]||k==='keep'||k==='cull')
+    .map(([k,t])=>'<div class="'+k+'">'+t+'<b>'+(n[k]||0)+'</b></div>').join('')+'</div>';
+}
 function verdictTag(v){return '<span class="tag t-'+v[0]+'">'+({keep:'유지',cull:'정리',hold:'보류',check:'확인'}[v[0]])+'</span>';}
 
 /* 그 순위를 낸 정석 기술배치. 대기머가 필요한 기술에는 * 를 붙입니다 (순위 탭과 같은 방식). */
@@ -962,9 +1089,7 @@ $('#bgo').onclick=()=>{
   const n={keep:0,cull:0,hold:0,check:0};
   rows.forEach(o=>n[o.verdict[0]]++);
   let H='';
-  if(rows.length) H+='<div class="note" style="margin-top:14px">'+rows.length+'마리 — '+
-    [['유지',n.keep],['확인',n.check],['보류',n.hold],['정리',n.cull]]
-      .filter(x=>x[1]).map(x=>x[0]+' '+x[1]).join(' · ')+'</div>';
+  if(rows.length) H+=sumTiles(n);
   H+=renderTable(rows,false);
   if(bad.length) H+='<div class="err">읽지 못한 줄: '+bad.map(esc).join(' · ')+'</div>';
   $('#bout').innerHTML=H;
@@ -1247,11 +1372,11 @@ function showMegaLv(){
 function renderRaidTypes(){
   showMegaLv();
   if(!GM) return;
-  const chips=[['L1500','슈퍼리그','#6C8CD5'],['L2500','하이퍼리그','#6C8CD5']]
-    .concat((PVE?PVE.types:[]).map(t=>['T'+t,TYPE_KO[t]||t,TYPE_C[t]||'#6C8CD5']));
+  const chips=[['L1500','슈퍼리그',''],['L2500','하이퍼리그','']]
+    .concat((PVE?PVE.types:[]).map(t=>['T'+t,TYPE_KO[t]||t,TYPE_C[t]||'']));
   $('#rkchips').innerHTML = chips.map(([k,label,c],i)=>
     (i===2?'<span class="chipgap"></span>':'')+
-    '<button class="fchip" data-rk="'+k+'" style="border-color:'+c+'55">'+esc(label)+'</button>').join('');
+    '<button class="fchip" data-rk="'+k+'"'+(c?' style="--c:'+c+'"':'')+'>'+esc(label)+'</button>').join('');
 }
 
 /* 리그(PvP) 순위 한 줄 */
@@ -1333,7 +1458,7 @@ function renderBox(){
   const rows=BOX.map(x=>{ const p=IDX.get(x.id); return p?evalMon(p,x.a,x.d,x.h,x.cp,x.legacy):null; }).filter(Boolean);
   const n={keep:0,cull:0,hold:0}; rows.forEach(o=>n[o.verdict[0]]++);
   $('#boxout').innerHTML =
-    (rows.length?'<div class="note" style="margin-top:18px">유지 '+n.keep+' · 보류 '+n.hold+' · 정리 '+n.cull+'</div>':'')
+    (rows.length?sumTiles(n):'')
     + renderTable(rows,true);
 }
 $('#boxout').addEventListener('click',e=>{
@@ -1382,10 +1507,74 @@ $('#ovfile').onchange=e=>{
 };
 
 /* ---------- tabs ---------- */
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));
-  ['one','bulk','raid','elite','rank','box','set'].forEach(k=>$('#p-'+k).className = (k===t.dataset.t?'':'hide'));
-  if(t.dataset.t==='box') renderBox();
+function showTab(k){
+  document.querySelectorAll('.tab').forEach(x=>{
+    const on=x.dataset.t===k; x.setAttribute('aria-selected',on);
+    if(on&&x.scrollIntoView) x.scrollIntoView({block:'nearest',inline:'nearest'});
+  });
+  document.querySelectorAll('.ditem').forEach(x=>{
+    if(x.dataset.t===k) x.setAttribute('aria-current','page'); else x.removeAttribute('aria-current');
+  });
+  ['one','bulk','raid','elite','rank','box','set'].forEach(x=>$('#p-'+x).className = (x===k?'':'hide'));
+  if(k==='box') renderBox();
+}
+let tabDragged=false;
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{ if(!tabDragged) showTab(t.dataset.t); });
+
+/* 탭 줄: 폰에서는 손가락으로 밀면 넘어가고(기본 동작), PC 에서는 마우스로 끌어 넘깁니다.
+   더 볼 탭이 오른쪽에 남아 있을 때만 › 표시를 띄웁니다. */
+(function(){
+  const bar=$('#tabs'), wrap=$('#tabsw'); let d=null;
+  const hint=()=>wrap.setAttribute('data-more', bar.scrollLeft+bar.clientWidth < bar.scrollWidth-4);
+  bar.addEventListener('scroll',hint,{passive:true});
+  window.addEventListener('resize',hint);
+  bar.addEventListener('pointerdown',e=>{ if(e.pointerType==='mouse') d={x:e.clientX,left:bar.scrollLeft,moved:false}; });
+  document.addEventListener('pointermove',e=>{
+    if(!d) return;
+    const dx=e.clientX-d.x;
+    if(!d.moved&&Math.abs(dx)>5){ d.moved=true; bar.setAttribute('data-drag','true'); }
+    if(d.moved) bar.scrollLeft=d.left-dx;
+  });
+  document.addEventListener('pointerup',()=>{
+    if(!d) return;
+    tabDragged=d.moved; d=null; bar.removeAttribute('data-drag');
+    setTimeout(()=>{ tabDragged=false; },0);
+  });
+  hint();
+})();
+
+/* 전체 메뉴 (삼선 버튼) */
+function setMenu(on){
+  document.body.setAttribute('data-menu',on);
+  $('#menu').setAttribute('aria-expanded',on);
+  if(on){ const c=$('#drawer .ditem[aria-current]')||$('#dclose'); if(c.focus) c.focus(); }
+  else if($('#menu').focus) $('#menu').focus();
+}
+$('#menu').onclick=()=>setMenu(true);
+$('#dclose').onclick=()=>setMenu(false);
+$('#scrim').onclick=()=>setMenu(false);
+document.querySelectorAll('.ditem').forEach(t=>t.onclick=()=>{ showTab(t.dataset.t); setMenu(false); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&document.body.getAttribute('data-menu')==='true') setMenu(false); });
+/* 메뉴판을 왼쪽으로 밀면 닫힙니다 */
+(function(){
+  const dr=$('#drawer'); let x0=null;
+  dr.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; },{passive:true});
+  dr.addEventListener('touchend',e=>{
+    if(x0!==null&&e.changedTouches[0].clientX-x0<-60) setMenu(false);
+    x0=null;
+  },{passive:true});
+})();
+
+/* 개체값 칸 아래 막대 — 게임 감정 화면처럼. 15 는 금색 */
+['#ia','#id_','#ih'].forEach(s=>{
+  const inp=$(s);
+  const upd=()=>{
+    const box=inp.closest('.ivbox'), b=box&&box.querySelector('.ivb'); if(!b) return;
+    const v=parseInt(inp.value,10), ok=v>=0&&v<=15;
+    b.querySelector('i').style.width=(ok?v/15*100:0)+'%';
+    b.setAttribute('data-full',v===15);
+  };
+  inp.addEventListener('input',upd); upd();
 });
 
 load();

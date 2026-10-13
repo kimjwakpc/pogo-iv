@@ -125,6 +125,7 @@ async function boot() {
     URL: { createObjectURL: () => '' },
     Blob: class {},
     setTimeout, clearTimeout,
+    addEventListener: () => {},
     fetch: async (u) => {
       if (!(u in byUrl)) throw new Error('예상 못 한 fetch 대상: ' + u);
       return { ok: true, json: async () => byUrl[u], text: async () => JSON.stringify(byUrl[u]) };
